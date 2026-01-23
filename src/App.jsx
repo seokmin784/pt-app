@@ -979,15 +979,17 @@ export default function PTManagementApp() {
                 return (
                   <div
                     key={exercise.id}
-                    onClick={() => toggleExerciseSelection(exercise.id)}
-                    className={`p-4 rounded-2xl cursor-pointer transition-all border ${
+                    className={`p-4 rounded-2xl transition-all border ${
                       isSelected 
                         ? 'bg-blue-500/20 border-blue-500' 
                         : 'bg-white/5 border-white/10 hover:bg-white/10'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex-1">
+                      <div 
+                        className="flex-1 cursor-pointer"
+                        onClick={() => toggleExerciseSelection(exercise.id)}
+                      >
                         <div className="flex items-center gap-2 mb-2">
                           <h3 className="font-semibold text-white">{exercise.name}</h3>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[exercise.category]?.light || 'bg-white/10'} ${categoryColors[exercise.category]?.text || 'text-white/60'}`}>
@@ -1000,8 +1002,25 @@ export default function PTManagementApp() {
                           ))}
                         </div>
                       </div>
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isSelected ? 'bg-blue-500' : 'bg-white/10'}`}>
-                        {isSelected && <Check size={14} />}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirm(`"${exercise.name}" 운동을 라이브러리에서 삭제할까요?`)) {
+                              setExerciseLibrary(prev => prev.filter(ex => ex.id !== exercise.id));
+                              setSelectedExercises(prev => prev.filter(id => id !== exercise.id));
+                            }
+                          }}
+                          className="w-8 h-8 rounded-full bg-white/5 hover:bg-rose-500/20 flex items-center justify-center transition-all"
+                        >
+                          <Trash2 size={14} className="text-white/40 hover:text-rose-400" />
+                        </button>
+                        <div 
+                          onClick={() => toggleExerciseSelection(exercise.id)}
+                          className={`w-6 h-6 rounded-full flex items-center justify-center cursor-pointer ${isSelected ? 'bg-blue-500' : 'bg-white/10'}`}
+                        >
+                          {isSelected && <Check size={14} />}
+                        </div>
                       </div>
                     </div>
                   </div>
