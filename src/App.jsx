@@ -30,6 +30,8 @@ export default function PTManagementApp() {
   const [librarySearchTerm, setLibrarySearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('전체');
   const [selectedExercises, setSelectedExercises] = useState([]);
+  const [editingExercise, setEditingExercise] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
   
   const sampleVideo = "https://www.w3schools.com/html/mov_bbb.mp4";
 
@@ -343,6 +345,49 @@ export default function PTManagementApp() {
     }));
   };
 
+  const handleEditExercise = (exercise) => {
+    setEditingExercise({
+      ...exercise,
+      sets: JSON.parse(JSON.stringify(exercise.sets))
+    });
+    setShowEditModal(true);
+  };
+
+  const handleSaveExercise = () => {
+    setWorkoutData(prev => ({
+      ...prev,
+      [dateKey]: {
+        ...prev[dateKey],
+        exercises: prev[dateKey].exercises.map(ex => 
+          ex.id === editingExercise.id ? editingExercise : ex
+        )
+      }
+    }));
+    setShowEditModal(false);
+    setEditingExercise(null);
+  };
+
+  const updateEditingSet = (index, field, value) => {
+    setEditingExercise(prev => ({
+      ...prev,
+      sets: prev.sets.map((set, i) => i === index ? { ...set, [field]: value } : set)
+    }));
+  };
+
+  const addEditingSetRow = () => {
+    setEditingExercise(prev => ({
+      ...prev,
+      sets: [...prev.sets, { weight: '', reps: '', sets: 1 }]
+    }));
+  };
+
+  const removeEditingSetRow = (index) => {
+    setEditingExercise(prev => ({
+      ...prev,
+      sets: prev.sets.filter((_, i) => i !== index)
+    }));
+  };
+
   const togglePT = () => {
     setWorkoutData(prev => ({
       ...prev,
@@ -455,7 +500,11 @@ export default function PTManagementApp() {
 
           <div className="space-y-4">
             {todayWorkout.exercises.map((exercise) => (
-              <div key={exercise.id} className="bg-white/5 backdrop-blur-xl rounded-3xl p-5 border border-white/10">
+              <div 
+                key={exercise.id} 
+                className="bg-white/5 backdrop-blur-xl rounded-3xl p-5 border border-white/10 cursor-pointer hover:bg-white/10 transition-all"
+                onClick={() => handleEditExercise(exercise)}
+              >
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-lg font-semibold text-white mb-1">{exercise.name}</h3>
@@ -465,13 +514,16 @@ export default function PTManagementApp() {
                       </span>
                     )}
                   </div>
-                  <button onClick={() => handleDeleteExercise(exercise.id)} className="text-white/30 hover:text-rose-400 p-2 transition-colors">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDeleteExercise(exercise.id); }} 
+                    className="text-white/30 hover:text-rose-400 p-2 transition-colors"
+                  >
                     <Trash2 size={18} />
                   </button>
                 </div>
                 
                 {exercise.video && (
-                  <div className="mb-4 rounded-2xl overflow-hidden bg-black/50">
+                  <div className="mb-4 rounded-2xl overflow-hidden bg-black/50" onClick={(e) => e.stopPropagation()}>
                     <video src={exercise.video} controls playsInline preload="metadata" className="w-full" style={{ maxHeight: '200px' }} />
                   </div>
                 )}
@@ -487,6 +539,8 @@ export default function PTManagementApp() {
                 </div>
                 
                 <p className="text-sm text-white/50 leading-relaxed">{exercise.description}</p>
+                
+                <div className="mt-3 text-xs text-blue-400 text-center">탭하여 편집</div>
               </div>
             ))}
           </div>
@@ -1234,6 +1288,105 @@ export default function PTManagementApp() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 운동 편집 모달 */}
+      {showEditModal && editingExercise && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-end justify-center z-50">
+          <div className="bg-slate-900 w-full max-w-lg rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/10">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold">운동 편집</h2>
+              <button onClick={() => { setShowEditModal(false); setEditingExercise(null); }} className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-2 block tracking-wide uppercase">운동 이름</label>
+                <input
+                  type="text"
+                  value={editingExercise.name}
+                  onChange={(e) => setEditingExercise(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-2 block tracking-wide uppercase">분류</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['등', '가슴', '어깨', '하체', '팔'].map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setEditingExercise(prev => ({ ...prev, category: cat }))}
+                      className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                        editingExercise.category === cat 
+                          ? categoryColors[cat]?.bg || 'bg-white/20' 
+                          : 'bg-white/5 text-white/60 hover:bg-white/10'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-2 block tracking-wide uppercase">세트 정보</label>
+                {editingExercise.sets.map((set, index) => (
+                  <div key={index} className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={set.weight}
+                      onChange={(e) => updateEditingSet(index, 'weight', e.target.value)}
+                      placeholder="무게"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-white/30"
+                    />
+                    <input
+                      type="number"
+                      value={set.reps}
+                      onChange={(e) => updateEditingSet(index, 'reps', e.target.value)}
+                      placeholder="개수"
+                      className="w-20 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-white/30"
+                    />
+                    <input
+                      type="number"
+                      value={set.sets}
+                      onChange={(e) => updateEditingSet(index, 'sets', e.target.value)}
+                      placeholder="세트"
+                      className="w-20 bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm placeholder-white/30"
+                    />
+                    {editingExercise.sets.length > 1 && (
+                      <button onClick={() => removeEditingSetRow(index)} className="text-rose-400 px-2">
+                        <X size={16} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button onClick={addEditingSetRow} className="text-blue-400 text-sm font-medium flex items-center gap-1 mt-2">
+                  <Plus size={14} /> 세트 추가
+                </button>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-2 block tracking-wide uppercase">자세 설명</label>
+                <textarea
+                  value={editingExercise.description}
+                  onChange={(e) => setEditingExercise(prev => ({ ...prev, description: e.target.value }))}
+                  rows={4}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white resize-none focus:outline-none focus:border-white/20"
+                />
+              </div>
+
+              <button
+                onClick={handleSaveExercise}
+                className="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl font-semibold transition-all shadow-lg shadow-blue-500/25"
+              >
+                저장하기
+              </button>
+            </div>
           </div>
         </div>
       )}
