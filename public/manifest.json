@@ -1,0 +1,21 @@
+{
+  "name": "PT 관리",
+  "short_name": "PT",
+  "description": "개인 트레이닝 운동/식단 관리 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
