@@ -1162,3 +1162,140 @@ export default function PTManagementApp() {
     </div>
   );
 }
+ 'bg-white text-black' : 'bg-white/5 text-white/60'}`}>{cat}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">세트 정보</label>
+                {editingLibraryExercise.sets.map((s, i) => <SetInputRow key={i} set={s} index={i} onUpdate={updateLibraryEditingSet} onRemove={removeLibraryEditingSetRow} canRemove={editingLibraryExercise.sets.length > 1} />)}
+                <button onClick={addLibraryEditingSetRow} className="text-sm text-white/40 font-medium flex items-center gap-1 mt-1 hover:text-white"><Plus size={14} />세트 추가</button>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">영상</label>
+                <label className="flex items-center justify-center w-full h-20 bg-white/5 border border-dashed border-white/20 rounded-xl cursor-pointer hover:bg-white/10">
+                  {editingLibraryExercise.video ? (
+                    <div className="text-center">
+                      <Video size={24} className="mx-auto text-white/50 mb-1" />
+                      <span className="text-xs text-white/50">영상 변경</span>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Video size={24} className="mx-auto text-white/20 mb-1" />
+                      <span className="text-xs text-white/30">영상 추가</span>
+                    </div>
+                  )}
+                  <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'libraryEdit')} className="hidden" />
+                </label>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">설명</label>
+                <textarea value={editingLibraryExercise.description} onChange={(e) => setEditingLibraryExercise(p => ({ ...p, description: e.target.value }))} rows={3} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-white/30 resize-none" />
+              </div>
+              <button onClick={handleSaveLibraryExercise} className="w-full py-3 bg-white text-black rounded-xl font-semibold">저장하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 라이브러리 운동 추가 모달 */}
+      {showAddLibraryModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-end justify-center z-50">
+          <div className="bg-zinc-900 w-full max-w-lg rounded-t-2xl p-5 max-h-[85vh] overflow-y-auto border-t border-white/10">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-white">라이브러리에 추가</h2>
+              <button onClick={() => setShowAddLibraryModal(false)} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"><X size={20} className="text-white/50" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">운동 이름</label>
+                <input type="text" value={newLibraryExercise.name} onChange={(e) => setNewLibraryExercise(p => ({ ...p, name: e.target.value }))} placeholder="운동 이름" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">분류</label>
+                <div className="flex gap-2 flex-wrap">
+                  {['등', '가슴', '어깨', '하체', '팔', '코어'].map(cat => (
+                    <button key={cat} onClick={() => setNewLibraryExercise(p => ({ ...p, category: cat }))} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${newLibraryExercise.category === cat ? 'bg-white text-black' : 'bg-white/5 text-white/60'}`}>{cat}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">세트 정보</label>
+                {newLibraryExercise.sets.map((s, i) => <SetInputRow key={i} set={s} index={i} onUpdate={updateNewLibrarySet} onRemove={removeNewLibrarySetRow} canRemove={newLibraryExercise.sets.length > 1} />)}
+                <button onClick={addNewLibrarySetRow} className="text-sm text-white/40 font-medium flex items-center gap-1 mt-1 hover:text-white"><Plus size={14} />세트 추가</button>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">영상</label>
+                <label className="flex items-center justify-center w-full h-20 bg-white/5 border border-dashed border-white/20 rounded-xl cursor-pointer hover:bg-white/10">
+                  {newLibraryExercise.video ? (
+                    <div className="text-center">
+                      <Video size={24} className="mx-auto text-white/50 mb-1" />
+                      <span className="text-xs text-white/50">영상 선택됨</span>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <Video size={24} className="mx-auto text-white/20 mb-1" />
+                      <span className="text-xs text-white/30">영상 추가</span>
+                    </div>
+                  )}
+                  <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'library')} className="hidden" />
+                </label>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">설명</label>
+                <textarea value={newLibraryExercise.description} onChange={(e) => setNewLibraryExercise(p => ({ ...p, description: e.target.value }))} placeholder="자세 및 주의사항" rows={2} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none focus:border-white/30 resize-none" />
+              </div>
+              <button onClick={handleAddNewLibraryExercise} disabled={!newLibraryExercise.name} className="w-full py-3 bg-white text-black rounded-xl font-semibold disabled:bg-white/20 disabled:text-white/40">추가하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 영양제 추가 모달 */}
+      {showAddSupplementModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 w-full max-w-sm rounded-2xl p-5 border border-white/10">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-white">영양제 추가</h2>
+              <button onClick={() => setShowAddSupplementModal(false)} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"><X size={20} className="text-white/50" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">영양제 이름</label>
+                <input type="text" value={newSupplement.name} onChange={(e) => setNewSupplement(p => ({ ...p, name: e.target.value }))} placeholder="비타민D" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">복용량 (선택)</label>
+                <input type="text" value={newSupplement.dosage} onChange={(e) => setNewSupplement(p => ({ ...p, dosage: e.target.value }))} placeholder="1정, 2캡슐 등" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-white/30" />
+              </div>
+              <button onClick={handleAddSupplement} disabled={!newSupplement.name} className="w-full py-3 bg-white text-black rounded-xl font-semibold disabled:bg-white/20 disabled:text-white/40">추가하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 영양제 편집 모달 */}
+      {showEditSupplementModal && editingSupplement && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 w-full max-w-sm rounded-2xl p-5 border border-white/10">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold text-white">영양제 편집</h2>
+              <button onClick={() => { setShowEditSupplementModal(false); setEditingSupplement(null); }} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center"><X size={20} className="text-white/50" /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">영양제 이름</label>
+                <input type="text" value={editingSupplement.name} onChange={(e) => setEditingSupplement(p => ({ ...p, name: e.target.value }))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-white/40 mb-1.5 block">복용량</label>
+                <input type="text" value={editingSupplement.dosage} onChange={(e) => setEditingSupplement(p => ({ ...p, dosage: e.target.value }))} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white/30" />
+              </div>
+              <button onClick={handleSaveSupplement} className="w-full py-3 bg-white text-black rounded-xl font-semibold">저장하기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
