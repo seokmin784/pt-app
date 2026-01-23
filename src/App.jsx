@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -35,6 +35,10 @@ export default function PTManagementApp() {
   const [loginInput, setLoginInput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  
+  // 메모장 상태
+  const [memoContent, setMemoContent] = useState('');
+  const [memoSaved, setMemoSaved] = useState(true);
 
   const defaultLibrary = [
     { id: 'lib-1', name: 'MTS 로우', category: '등', video: null, sets: [{ weight: '30kg씩', reps: 15, sets: 1 }, { weight: '50kg씩', reps: 15, sets: 1 }, { weight: '70kg씩', reps: 10, sets: 2 }], description: '팔각도가 90도정도로 땡겨지게끔 의자 높이 맞춰주기' },
@@ -76,6 +80,11 @@ export default function PTManagementApp() {
         await saveLibraryToSupabase(uid, defaultLibrary);
         setExerciseLibrary(defaultLibrary);
       }
+      // 메모 불러오기
+      const { data: memos } = await supabase.from('memos').select('*').eq('user_id', uid).single();
+      if (memos) {
+        setMemoContent(memos.content || '');
+      }
     } catch (error) { console.error('불러오기 실패:', error); }
     setIsLoading(false);
   };
@@ -108,6 +117,17 @@ export default function PTManagementApp() {
     } catch (error) { console.error('라이브러리 저장 실패:', error); }
   };
 
+  // 메모 저장
+  const saveMemoToSupabase = async () => {
+    if (!userId) return;
+    setIsSyncing(true);
+    try {
+      await supabase.from('memos').upsert({ user_id: userId, content: memoContent }, { onConflict: 'user_id' });
+      setMemoSaved(true);
+    } catch (error) { console.error('메모 저장 실패:', error); }
+    setIsSyncing(false);
+  };
+
   const handleLogin = async () => {
     if (!loginInput.trim()) return;
     const uid = loginInput.trim().toLowerCase();
@@ -124,6 +144,7 @@ export default function PTManagementApp() {
     setWorkoutData({});
     setDietData({});
     setExerciseLibrary(defaultLibrary);
+    setMemoContent('');
     setShowLoginModal(true);
   };
 
@@ -354,7 +375,7 @@ export default function PTManagementApp() {
             <button onClick={() => { setShowAddModal(true); setExerciseForm({ name: '', category: todayWorkout.category || '', video: null, videoName: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: todayWorkout.isPT }); }} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-semibold"><Plus size={18} /><span>새로 추가</span></button>
           </div>
         </div>
-      ) : (
+      ) : activeTab === 'diet' ? (
         <div>
           <div className="space-y-4">
             {todayDiet.meals.map((meal) => (
@@ -368,6 +389,32 @@ export default function PTManagementApp() {
             ))}
           </div>
           <button onClick={() => { setShowAddModal(true); setDietForm({ name: '', video: null, videoName: '', description: '' }); }} className="w-full mt-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center gap-2 font-semibold"><Plus size={18} /><span>식단 추가</span></button>
+        </div>
+      ) : (
+        <div>
+          <div className="bg-white/5 rounded-3xl p-5 border border-white/10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <FileText size={20} className="text-purple-400" />
+                <span className="font-semibold">메모장</span>
+              </div>
+              <button 
+                onClick={saveMemoToSupabase} 
+                className={`px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-medium transition-all ${memoSaved ? 'bg-white/5 text-white/40' : 'bg-purple-500 text-white'}`}
+              >
+                <Save size={16} />
+                {memoSaved ? '저장됨' : '저장'}
+              </button>
+            </div>
+            <textarea
+              value={memoContent}
+              onChange={(e) => { setMemoContent(e.target.value); setMemoSaved(false); }}
+              placeholder="자유롭게 메모하세요...&#10;&#10;예시:&#10;- 오늘 컨디션&#10;- 트레이너 피드백&#10;- 다음 목표&#10;- 식단 계획"
+              rows={12}
+              className="w-full bg-black/20 border border-white/10 rounded-2xl px-4 py-4 text-white placeholder-white/30 resize-none focus:outline-none focus:border-purple-500/50"
+            />
+            <p className="text-xs text-white/30 mt-3 text-center">메모는 자동 저장되지 않아요. 저장 버튼을 눌러주세요!</p>
+          </div>
         </div>
       )}
     </div>
@@ -544,6 +591,7 @@ export default function PTManagementApp() {
         <div className="flex gap-2 px-5 py-3 max-w-lg mx-auto">
           <button onClick={() => setActiveTab('workout')} className={`flex-1 py-3 rounded-2xl flex items-center justify-center gap-2 font-medium ${activeTab === 'workout' ? 'bg-gradient-to-r from-blue-500 to-cyan-500' : 'bg-white/5 text-white/40'}`}><Dumbbell size={18} /><span>운동</span></button>
           <button onClick={() => setActiveTab('diet')} className={`flex-1 py-3 rounded-2xl flex items-center justify-center gap-2 font-medium ${activeTab === 'diet' ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-white/5 text-white/40'}`}><Utensils size={18} /><span>식단</span></button>
+          <button onClick={() => setActiveTab('memo')} className={`flex-1 py-3 rounded-2xl flex items-center justify-center gap-2 font-medium ${activeTab === 'memo' ? 'bg-gradient-to-r from-purple-500 to-pink-500' : 'bg-white/5 text-white/40'}`}><FileText size={18} /><span>메모</span></button>
         </div>
       )}
       <div className="relative">
