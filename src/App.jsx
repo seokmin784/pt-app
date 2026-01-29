@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -40,7 +40,7 @@ const getYouTubeEmbedUrl = (url) => {
   if (shortsMatch) videoId = shortsMatch[1];
   
   if (videoId) {
-    return `https://www.youtube.com/embed/${videoId}`;
+    return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
   }
   
   return url; // 변환 실패시 원본 반환
@@ -103,8 +103,6 @@ export default function PTManagementApp() {
   const [newLibraryExercise, setNewLibraryExercise] = useState({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' });
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
-  const [showVideoModal, setShowVideoModal] = useState(false);
-  const [currentVideo, setCurrentVideo] = useState(null);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingLibrarySave, setPendingLibrarySave] = useState(null);
 
@@ -559,9 +557,9 @@ export default function PTManagementApp() {
     setShowCalendarPopup(false);
   };
 
-  const openVideoModal = (videoUrl) => {
-    setCurrentVideo(videoUrl);
-    setShowVideoModal(true);
+  // 라이브러리에 저장되어 있는지 확인
+  const isInLibrary = (exerciseName) => {
+    return exerciseLibrary.some(ex => ex.name === exerciseName);
   };
 
   const categoryColors = {
@@ -613,59 +611,115 @@ export default function PTManagementApp() {
   );
 
   // YouTube 링크 입력 컴포넌트
-  const YouTubeLinkInput = ({ value, onChange, label = '유튜브 링크' }) => (
-    <div>
-      <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">{label}</label>
-      <div className="relative">
-        <Link size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-        <input
-          type="text"
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="https://youtube.com/watch?v=... 또는 https://youtu.be/..."
-          className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pl-11 text-white placeholder-white/30 focus:outline-none focus:border-red-500/50 transition-all"
-        />
-      </div>
-      {value && getYouTubeThumbnail(value) && (
-        <div className="mt-3 relative rounded-xl overflow-hidden cursor-pointer group" onClick={() => openVideoModal(value)}>
-          <img src={getYouTubeThumbnail(value)} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-            <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center">
-              <Play size={28} className="text-white ml-1" fill="white" />
-            </div>
-          </div>
-          <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 rounded text-xs text-white flex items-center gap-1">
-            <Video size={12} className="text-red-500" /> YouTube
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  const YouTubeLinkInput = ({ value, onChange, label = '유튜브 링크' }) => {
+    const [previewPlaying, setPreviewPlaying] = useState(false);
+    const thumbnail = getYouTubeThumbnail(value);
+    const embedUrl = getYouTubeEmbedUrl(value);
 
-  const ExerciseCard = ({ ex, onEdit, onDelete }) => {
+    return (
+      <div>
+        <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">{label}</label>
+        <div className="relative">
+          <Link size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+          <input
+            type="text"
+            value={value || ''}
+            onChange={(e) => { onChange(e.target.value); setPreviewPlaying(false); }}
+            placeholder="https://youtube.com/watch?v=... 또는 https://youtu.be/..."
+            className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pl-11 text-white placeholder-white/30 focus:outline-none focus:border-red-500/50 transition-all"
+          />
+        </div>
+        {value && thumbnail && (
+          <div className="mt-3 relative rounded-xl overflow-hidden">
+            {previewPlaying ? (
+              <div className="relative pt-[56.25%] bg-black">
+                <iframe
+                  src={embedUrl}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+                <button 
+                  onClick={() => setPreviewPlaying(false)} 
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10"
+                >
+                  <X size={16} className="text-white" />
+                </button>
+              </div>
+            ) : (
+              <div className="cursor-pointer group" onClick={() => setPreviewPlaying(true)}>
+                <img src={thumbnail} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                  <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center">
+                    <Play size={28} className="text-white ml-1" fill="white" />
+                  </div>
+                </div>
+                <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 rounded text-xs text-white flex items-center gap-1">
+                  <Video size={12} className="text-red-500" /> YouTube
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 운동 카드 컴포넌트 - 인라인 비디오 재생 및 라이브러리 저장 여부 표시
+  const ExerciseCard = ({ ex, onEdit, onDelete, exerciseLibrary }) => {
     const [localMemo, setLocalMemo] = useState(ex.memo || '');
+    const [isPlaying, setIsPlaying] = useState(false);
     const handleMemoSave = () => { updateExerciseMemo(ex.id, localMemo); };
     const thumbnail = getYouTubeThumbnail(ex.video);
+    const embedUrl = getYouTubeEmbedUrl(ex.video);
+    const inLibrary = exerciseLibrary.some(libEx => libEx.name === ex.name);
 
     return (
       <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
         {ex.video && thumbnail && (
-          <div className="relative bg-black/60 aspect-video cursor-pointer group" onClick={() => openVideoModal(ex.video)}>
-            <img src={thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center">
-              <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-xl border border-white/20 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all">
-                <Play size={36} className="text-white ml-1" fill="white" />
+          <div className="relative bg-black/60">
+            {isPlaying ? (
+              <div className="relative pt-[56.25%]">
+                <iframe
+                  src={embedUrl}
+                  className="absolute inset-0 w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+                <button 
+                  onClick={() => setIsPlaying(false)} 
+                  className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10 border border-white/20"
+                >
+                  <Pause size={20} className="text-white" />
+                </button>
               </div>
-            </div>
-            <div className="absolute bottom-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-full text-xs text-white/80 flex items-center gap-1.5 border border-white/10">
-              <Video size={12} className="text-red-500" /><span>YouTube</span>
-            </div>
+            ) : (
+              <div className="aspect-video cursor-pointer group" onClick={() => setIsPlaying(true)}>
+                <img src={thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center">
+                  <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-xl border border-white/20 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all">
+                    <Play size={36} className="text-white ml-1" fill="white" />
+                  </div>
+                </div>
+                <div className="absolute bottom-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-full text-xs text-white/80 flex items-center gap-1.5 border border-white/10">
+                  <Video size={12} className="text-red-500" /><span>클릭하여 재생</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
         <div className="p-6">
           <div className="flex justify-between items-start mb-5">
             <div>
-              <h3 className="text-xl font-bold text-white mb-2">{ex.name}</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="text-xl font-bold text-white">{ex.name}</h3>
+                {inLibrary && (
+                  <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                    <BookOpen size={10} />
+                    라이브러리
+                  </span>
+                )}
+              </div>
               {ex.category && <span className={`text-xs px-3 py-1.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'} border ${categoryColors[ex.category]?.border || 'border-white/10'}`}>{ex.category}</span>}
             </div>
             <div className="flex items-center gap-1">
@@ -778,7 +832,7 @@ export default function PTManagementApp() {
             </div>
           </div>
           <div className="space-y-4">
-            {todayWorkout.exercises.map((ex) => (<ExerciseCard key={ex.id} ex={ex} onEdit={handleEditExercise} onDelete={handleDeleteExercise} />))}
+            {todayWorkout.exercises.map((ex) => (<ExerciseCard key={ex.id} ex={ex} onEdit={handleEditExercise} onDelete={handleDeleteExercise} exerciseLibrary={exerciseLibrary} />))}
           </div>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setShowLibraryModal(true); setSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-2xl flex items-center justify-center gap-2 font-semibold">
@@ -1090,27 +1144,6 @@ export default function PTManagementApp() {
     );
   };
 
-  // YouTube 비디오 모달
-  const renderVideoModal = () => {
-    const embedUrl = getYouTubeEmbedUrl(currentVideo);
-    
-    return (
-      <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50 p-5" onClick={() => setShowVideoModal(false)}>
-        <div className="w-full max-w-3xl" onClick={e => e.stopPropagation()}>
-          <div className="relative pt-[56.25%] rounded-2xl overflow-hidden shadow-2xl bg-black">
-            <iframe
-              src={embedUrl}
-              className="absolute inset-0 w-full h-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-          <button onClick={() => setShowVideoModal(false)} className="absolute top-5 right-5 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"><X size={24} /></button>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white pb-20">
       <div className="sticky top-0 z-40 bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/[0.05]">
@@ -1159,7 +1192,6 @@ export default function PTManagementApp() {
       </div>
 
       {showCalendarPopup && renderCalendarPopup()}
-      {showVideoModal && currentVideo && renderVideoModal()}
 
       {showLoginModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-5">
