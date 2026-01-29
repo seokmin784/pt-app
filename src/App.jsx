@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -102,6 +102,7 @@ export default function PTManagementApp() {
   const [showAddLibraryModal, setShowAddLibraryModal] = useState(false);
   const [newLibraryExercise, setNewLibraryExercise] = useState({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' });
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingLibrarySave, setPendingLibrarySave] = useState(null);
@@ -118,22 +119,93 @@ export default function PTManagementApp() {
   const [workoutData, setWorkoutData] = useState({});
   const [dietData, setDietData] = useState({});
 
+  // 🔧 수정된 이미지 업로드 함수 - 카메라 촬영 지원 개선
   const uploadImageToStorage = async (file) => {
-    if (!userId || !file) return null;
+    // 로그인 체크
+    if (!userId) {
+      console.error('업로드 실패: 로그인 필요');
+      return { success: false, error: '로그인이 필요합니다' };
+    }
+    
+    if (!file) {
+      return { success: false, error: '파일이 없습니다' };
+    }
+
     setUploadingPhoto(true);
+    setUploadError(null);
+    
     try {
-      const fileExt = file.name?.split('.').pop() || 'jpg';
-      const fileName = `${userId}/${Date.now()}.${fileExt}`;
-      const { error } = await supabase.storage.from('video').upload(fileName, file);
-      if (error) throw error;
-      const { data: urlData } = supabase.storage.from('video').getPublicUrl(fileName);
+      // 🔧 파일 타입에서 확장자 추출 (카메라 촬영 시 file.name이 없을 수 있음)
+      let fileExt = 'jpg';
+      
+      if (file.type) {
+        // MIME 타입에서 확장자 추출 (예: image/jpeg -> jpg)
+        const mimeMatch = file.type.match(/image\/(\w+)/);
+        if (mimeMatch) {
+          fileExt = mimeMatch[1] === 'jpeg' ? 'jpg' : mimeMatch[1];
+        }
+      } else if (file.name) {
+        // 파일명에서 확장자 추출
+        const nameParts = file.name.split('.');
+        if (nameParts.length > 1) {
+          fileExt = nameParts.pop().toLowerCase();
+        }
+      }
+      
+      // 파일명 생성: userId/timestamp.확장자
+      const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+      
+      console.log('업로드 시도:', { fileName, fileType: file.type, fileSize: file.size });
+      
+      // Supabase Storage에 업로드
+      const { data, error } = await supabase.storage
+        .from('video')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (error) {
+        console.error('Supabase 업로드 에러:', error);
+        throw error;
+      }
+      
+      // Public URL 가져오기
+      const { data: urlData } = supabase.storage
+        .from('video')
+        .getPublicUrl(fileName);
+      
+      console.log('업로드 성공:', urlData.publicUrl);
+      
       setUploadingPhoto(false);
-      return urlData.publicUrl;
+      return { success: true, url: urlData.publicUrl };
+      
     } catch (error) {
       console.error('이미지 업로드 실패:', error);
       setUploadingPhoto(false);
-      return null;
+      
+      // 에러 메시지 분류
+      let errorMessage = '업로드에 실패했습니다';
+      if (error.message?.includes('Bucket not found')) {
+        errorMessage = '저장소를 찾을 수 없습니다';
+      } else if (error.message?.includes('exceeded')) {
+        errorMessage = '파일 크기가 너무 큽니다';
+      } else if (error.message?.includes('Invalid')) {
+        errorMessage = '유효하지 않은 파일입니다';
+      }
+      
+      return { success: false, error: errorMessage };
     }
+  };
+
+  // 🔧 로컬 미리보기용 - 업로드 실패 시 로컬 URL 사용
+  const createLocalPreview = (file) => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    });
   };
 
   const loadFromSupabase = async (uid) => {
@@ -313,13 +385,57 @@ export default function PTManagementApp() {
   const todayWater = waterIntake[dateKey] || 0;
 
   const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
-  const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null });
+  const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null, localPreview: null });
 
+  // 🔧 수정된 사진 업로드 핸들러
   const handlePhotoUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
-    const url = await uploadImageToStorage(file);
-    if (url) setDietForm(p => ({ ...p, photo: url }));
+    
+    // 로그인 체크
+    if (!userId) {
+      setUploadError('로그인이 필요합니다');
+      return;
+    }
+    
+    // 파일 타입 검증
+    if (!file.type.startsWith('image/')) {
+      setUploadError('이미지 파일만 업로드 가능합니다');
+      return;
+    }
+    
+    // 파일 크기 검증 (10MB 제한)
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('파일 크기는 10MB 이하여야 합니다');
+      return;
+    }
+    
+    setUploadError(null);
+    
+    // 즉시 로컬 미리보기 표시 (더 나은 UX)
+    const localPreview = await createLocalPreview(file);
+    if (localPreview) {
+      setDietForm(prev => ({ ...prev, localPreview }));
+    }
+    
+    // 서버 업로드 시도
+    const result = await uploadImageToStorage(file);
+    
+    if (result.success) {
+      // 업로드 성공 시 서버 URL로 교체
+      setDietForm(prev => ({ 
+        ...prev, 
+        photo: result.url,
+        localPreview: null // 로컬 미리보기 제거
+      }));
+    } else {
+      // 업로드 실패 시 로컬 미리보기 유지하고 에러 표시
+      setUploadError(result.error);
+      // 로컬 미리보기는 유지 (사용자가 다시 시도할 수 있도록)
+    }
+    
+    // input 초기화 (같은 파일 다시 선택 가능하도록)
+    e.target.value = '';
   };
 
   const handleImportFromLibrary = () => {
@@ -358,11 +474,23 @@ export default function PTManagementApp() {
   };
 
   const handleAddMeal = async () => {
-    const newMeal = { id: Date.now(), ...dietForm };
+    // 로컬 미리보기만 있고 서버 URL이 없는 경우 경고
+    if (dietForm.localPreview && !dietForm.photo) {
+      const confirmAdd = window.confirm('사진이 서버에 업로드되지 않았습니다. 사진 없이 저장하시겠습니까?');
+      if (!confirmAdd) return;
+    }
+    
+    const newMeal = { 
+      id: Date.now(), 
+      name: dietForm.name,
+      description: dietForm.description,
+      photo: dietForm.photo || null // 서버 URL만 저장
+    };
     const newData = { meals: [...(dietData[dateKey]?.meals || []), newMeal] };
     setDietData(prev => ({ ...prev, [dateKey]: newData }));
     await saveDietToSupabase(dateKey, newData);
-    setDietForm({ name: '', description: '', photo: null });
+    setDietForm({ name: '', description: '', photo: null, localPreview: null });
+    setUploadError(null);
     setShowAddModal(false);
   };
 
@@ -859,7 +987,7 @@ export default function PTManagementApp() {
               </div>
             ))}
           </div>
-          <button onClick={() => { setShowAddModal(true); setDietForm({ name: '', description: '', photo: null }); }} className="w-full mt-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-emerald-500/30">
+          <button onClick={() => { setShowAddModal(true); setDietForm({ name: '', description: '', photo: null, localPreview: null }); setUploadError(null); }} className="w-full mt-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-emerald-500/30">
             <Plus size={18} /><span>식단 추가</span>
           </button>
         </div>
@@ -1213,7 +1341,7 @@ export default function PTManagementApp() {
           <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-lg rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/10 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black">{activeTab === 'workout' ? '새 운동' : '식단 추가'}</h2>
-              <button onClick={() => setShowAddModal(false)} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><X size={20} /></button>
+              <button onClick={() => { setShowAddModal(false); setUploadError(null); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><X size={20} /></button>
             </div>
             {activeTab === 'workout' ? (
               <div className="space-y-5">
@@ -1254,16 +1382,78 @@ export default function PTManagementApp() {
               <div className="space-y-5">
                 <div>
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">식사 이름</label>
-                  <input type="text" value={dietForm.name} onChange={(e) => setDietForm(p => ({ ...p, name: e.target.value }))} placeholder="아침, 점심, 저녁..." className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-blue-500/50" />
+                  <input type="text" value={dietForm.name} onChange={(e) => setDietForm(p => ({ ...p, name: e.target.value }))} placeholder="아침, 점심, 저녁..." className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-emerald-500/50" />
                 </div>
+                {/* 🔧 개선된 사진 업로드 UI */}
                 <div>
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">사진</label>
-                  <label className="flex items-center justify-center w-full h-36 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05] overflow-hidden">
-                    {uploadingPhoto ? (<div className="text-center"><div className="w-8 h-8 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div><span className="text-sm text-white/40">업로드 중...</span></div>
-                    ) : dietForm.photo ? (<img src={dietForm.photo} alt="Preview" className="w-full h-full object-cover" />
-                    ) : (<div className="text-center"><Camera size={32} className="mx-auto text-white/30 mb-2" /><span className="text-sm text-white/30">사진 추가 또는 촬영</span></div>)}
-                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={uploadingPhoto} />
+                  <label className="flex items-center justify-center w-full h-40 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05] overflow-hidden relative">
+                    {uploadingPhoto ? (
+                      <div className="text-center">
+                        <div className="w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                        <span className="text-sm text-white/50">업로드 중...</span>
+                      </div>
+                    ) : (dietForm.photo || dietForm.localPreview) ? (
+                      <>
+                        <img 
+                          src={dietForm.photo || dietForm.localPreview} 
+                          alt="Preview" 
+                          className="w-full h-full object-cover" 
+                        />
+                        {/* 업로드 상태 표시 */}
+                        <div className="absolute bottom-2 right-2">
+                          {dietForm.photo ? (
+                            <span className="px-2 py-1 bg-emerald-500/80 rounded-lg text-xs text-white flex items-center gap-1">
+                              <Check size={12} /> 업로드 완료
+                            </span>
+                          ) : dietForm.localPreview ? (
+                            <span className="px-2 py-1 bg-amber-500/80 rounded-lg text-xs text-white flex items-center gap-1">
+                              <AlertCircle size={12} /> 로컬 미리보기
+                            </span>
+                          ) : null}
+                        </div>
+                        {/* 사진 변경 버튼 */}
+                        <div className="absolute top-2 right-2">
+                          <span className="px-2 py-1 bg-black/60 rounded-lg text-xs text-white">
+                            탭하여 변경
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-center">
+                        <Camera size={36} className="mx-auto text-white/30 mb-3" />
+                        <span className="text-sm text-white/40 block">카메라로 촬영</span>
+                        <span className="text-xs text-white/30">또는 앨범에서 선택</span>
+                      </div>
+                    )}
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      capture="environment" 
+                      onChange={handlePhotoUpload} 
+                      className="hidden" 
+                      disabled={uploadingPhoto} 
+                    />
                   </label>
+                  {/* 에러 메시지 표시 */}
+                  {uploadError && (
+                    <div className="mt-2 p-3 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2">
+                      <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
+                      <span className="text-sm text-red-400">{uploadError}</span>
+                      <button 
+                        onClick={() => setUploadError(null)} 
+                        className="ml-auto text-red-400 hover:text-red-300"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                  )}
+                  {/* 로컬 미리보기만 있을 때 재시도 버튼 */}
+                  {dietForm.localPreview && !dietForm.photo && !uploadingPhoto && (
+                    <p className="mt-2 text-xs text-amber-400">
+                      ⚠️ 사진이 서버에 업로드되지 않았습니다. 다시 촬영하거나 다른 사진을 선택해주세요.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">설명</label>
