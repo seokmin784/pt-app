@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -16,6 +16,59 @@ const loadFromStorage = (key, defaultValue) => {
     const saved = localStorage.getItem(key);
     return saved ? JSON.parse(saved) : defaultValue;
   } catch (e) { return defaultValue; }
+};
+
+// YouTube URL을 embed URL로 변환
+const getYouTubeEmbedUrl = (url) => {
+  if (!url) return null;
+  
+  // 이미 embed URL인 경우
+  if (url.includes('youtube.com/embed/')) return url;
+  
+  let videoId = null;
+  
+  // youtube.com/watch?v=VIDEO_ID 형식
+  const watchMatch = url.match(/youtube\.com\/watch\?v=([^&]+)/);
+  if (watchMatch) videoId = watchMatch[1];
+  
+  // youtu.be/VIDEO_ID 형식
+  const shortMatch = url.match(/youtu\.be\/([^?]+)/);
+  if (shortMatch) videoId = shortMatch[1];
+  
+  // youtube.com/shorts/VIDEO_ID 형식
+  const shortsMatch = url.match(/youtube\.com\/shorts\/([^?]+)/);
+  if (shortsMatch) videoId = shortsMatch[1];
+  
+  if (videoId) {
+    return `https://www.youtube.com/embed/${videoId}`;
+  }
+  
+  return url; // 변환 실패시 원본 반환
+};
+
+// YouTube 썸네일 URL 가져오기
+const getYouTubeThumbnail = (url) => {
+  if (!url) return null;
+  
+  let videoId = null;
+  
+  const watchMatch = url.match(/youtube\.com\/watch\?v=([^&]+)/);
+  if (watchMatch) videoId = watchMatch[1];
+  
+  const shortMatch = url.match(/youtu\.be\/([^?]+)/);
+  if (shortMatch) videoId = shortMatch[1];
+  
+  const shortsMatch = url.match(/youtube\.com\/shorts\/([^?]+)/);
+  if (shortsMatch) videoId = shortsMatch[1];
+  
+  const embedMatch = url.match(/youtube\.com\/embed\/([^?]+)/);
+  if (embedMatch) videoId = embedMatch[1];
+  
+  if (videoId) {
+    return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+  }
+  
+  return null;
 };
 
 export default function PTManagementApp() {
@@ -47,8 +100,7 @@ export default function PTManagementApp() {
   const [showLibraryEditModal, setShowLibraryEditModal] = useState(false);
   const [editingLibraryExercise, setEditingLibraryExercise] = useState(null);
   const [showAddLibraryModal, setShowAddLibraryModal] = useState(false);
-  const [newLibraryExercise, setNewLibraryExercise] = useState({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: null });
-  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [newLibraryExercise, setNewLibraryExercise] = useState({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' });
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -57,34 +109,16 @@ export default function PTManagementApp() {
   const [pendingLibrarySave, setPendingLibrarySave] = useState(null);
 
   const defaultLibrary = [
-    { id: 'lib-1', name: 'MTS 로우', category: '등', sets: [{ weight: '30', reps: 15, sets: 1 }, { weight: '50', reps: 15, sets: 1 }, { weight: '70', reps: 10, sets: 2 }], description: '팔각도가 90도정도로 땡겨지게끔 의자 높이 맞춰주기', video: null, memo: '' },
-    { id: 'lib-2', name: '뉴텍 하이로우', category: '등', sets: [{ weight: '20', reps: 15, sets: 1 }, { weight: '30', reps: 12, sets: 3 }], description: '뒷꿈치 들어 앉은 상태서 가슴 살짝 말아주기', video: null, memo: '' },
-    { id: 'lib-3', name: '랫풀다운', category: '등', sets: [{ weight: '50', reps: 15, sets: 1 }, { weight: '60', reps: 10, sets: 3 }], description: '상체 세워준 상태서 어깨 낮춰주기', video: null, memo: '' },
-    { id: 'lib-4', name: '체스트프레스', category: '가슴', sets: [{ weight: '26', reps: 15, sets: 1 }, { weight: '47', reps: 10, sets: 1 }], description: '어깨낮춰 광배 잡고 가슴 들어준 상태서 밀기', video: null, memo: '' },
-    { id: 'lib-5', name: '벤치프레스', category: '가슴', sets: [{ weight: '20', reps: 15, sets: 4 }], description: '바를 내렸을 때 명치 위쪽으로', video: null, memo: '' },
+    { id: 'lib-1', name: 'MTS 로우', category: '등', sets: [{ weight: '30', reps: 15, sets: 1 }, { weight: '50', reps: 15, sets: 1 }, { weight: '70', reps: 10, sets: 2 }], description: '팔각도가 90도정도로 땡겨지게끔 의자 높이 맞춰주기', video: '', memo: '' },
+    { id: 'lib-2', name: '뉴텍 하이로우', category: '등', sets: [{ weight: '20', reps: 15, sets: 1 }, { weight: '30', reps: 12, sets: 3 }], description: '뒷꿈치 들어 앉은 상태서 가슴 살짝 말아주기', video: '', memo: '' },
+    { id: 'lib-3', name: '랫풀다운', category: '등', sets: [{ weight: '50', reps: 15, sets: 1 }, { weight: '60', reps: 10, sets: 3 }], description: '상체 세워준 상태서 어깨 낮춰주기', video: '', memo: '' },
+    { id: 'lib-4', name: '체스트프레스', category: '가슴', sets: [{ weight: '26', reps: 15, sets: 1 }, { weight: '47', reps: 10, sets: 1 }], description: '어깨낮춰 광배 잡고 가슴 들어준 상태서 밀기', video: '', memo: '' },
+    { id: 'lib-5', name: '벤치프레스', category: '가슴', sets: [{ weight: '20', reps: 15, sets: 4 }], description: '바를 내렸을 때 명치 위쪽으로', video: '', memo: '' },
   ];
 
   const [exerciseLibrary, setExerciseLibrary] = useState(defaultLibrary);
   const [workoutData, setWorkoutData] = useState({});
   const [dietData, setDietData] = useState({});
-
-  const uploadVideoToStorage = async (file) => {
-    if (!userId || !file) return null;
-    setUploadingVideo(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}/${Date.now()}.${fileExt}`;
-      const { error } = await supabase.storage.from('video').upload(fileName, file);
-      if (error) throw error;
-      const { data: urlData } = supabase.storage.from('video').getPublicUrl(fileName);
-      setUploadingVideo(false);
-      return urlData.publicUrl;
-    } catch (error) {
-      console.error('영상 업로드 실패:', error);
-      setUploadingVideo(false);
-      return null;
-    }
-  };
 
   const uploadImageToStorage = async (file) => {
     if (!userId || !file) return null;
@@ -122,7 +156,7 @@ export default function PTManagementApp() {
       }
       const { data: library } = await supabase.from('exercise_library').select('*').eq('user_id', uid);
       if (library && library.length > 0) {
-        setExerciseLibrary(library.map(ex => ({ id: ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video, memo: ex.memo || '' })));
+        setExerciseLibrary(library.map(ex => ({ id: ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video || '', memo: ex.memo || '' })));
       } else {
         await saveLibraryToSupabase(uid, defaultLibrary);
         setExerciseLibrary(defaultLibrary);
@@ -174,7 +208,7 @@ export default function PTManagementApp() {
     try {
       await supabase.from('exercise_library').delete().eq('user_id', uid);
       if (library.length > 0) {
-        await supabase.from('exercise_library').insert(library.map(ex => ({ user_id: uid, name: ex.name, category: ex.category, sets: ex.sets, description: ex.description, video: ex.video, memo: ex.memo })));
+        await supabase.from('exercise_library').insert(library.map(ex => ({ user_id: uid, name: ex.name, category: ex.category, sets: ex.sets, description: ex.description, video: ex.video || '', memo: ex.memo })));
       }
     } catch (error) { console.error('라이브러리 저장 실패:', error); }
   };
@@ -280,20 +314,8 @@ export default function PTManagementApp() {
   const todaySupplements = supplementData[dateKey] || [];
   const todayWater = waterIntake[dateKey] || 0;
 
-  const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: null, sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
+  const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
   const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null });
-
-  const handleVideoUpload = async (e, type) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const url = await uploadVideoToStorage(file);
-    if (url) {
-      if (type === 'exercise') setExerciseForm(p => ({ ...p, video: url }));
-      else if (type === 'editing') setEditingExercise(p => ({ ...p, video: url }));
-      else if (type === 'library') setNewLibraryExercise(p => ({ ...p, video: url }));
-      else if (type === 'libraryEdit') setEditingLibraryExercise(p => ({ ...p, video: url }));
-    }
-  };
 
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
@@ -333,7 +355,7 @@ export default function PTManagementApp() {
     const newData = { category: workoutData[dateKey]?.category || exerciseForm.category || '미지정', isPT: exerciseForm.isPT || workoutData[dateKey]?.isPT || false, exercises: [...(workoutData[dateKey]?.exercises || []), newEx] };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
-    setExerciseForm({ name: '', category: '', video: null, sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
+    setExerciseForm({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
     setShowAddModal(false);
   };
 
@@ -381,7 +403,7 @@ export default function PTManagementApp() {
         category: editingExercise.category,
         sets: JSON.parse(JSON.stringify(editingExercise.sets)),
         description: editingExercise.description,
-        video: editingExercise.video,
+        video: editingExercise.video || '',
         memo: editingExercise.memo || ''
       };
       const newLib = [...exerciseLibrary, newLibraryEx];
@@ -400,7 +422,7 @@ export default function PTManagementApp() {
           category: pendingLibrarySave.category,
           sets: JSON.parse(JSON.stringify(pendingLibrarySave.sets)),
           description: pendingLibrarySave.description,
-          video: pendingLibrarySave.video,
+          video: pendingLibrarySave.video || '',
           memo: pendingLibrarySave.memo || ''
         };
       }
@@ -428,7 +450,7 @@ export default function PTManagementApp() {
     const newLib = [...exerciseLibrary, newEx];
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
-    setNewLibraryExercise({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: null });
+    setNewLibraryExercise({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' });
     setShowAddLibraryModal(false);
   };
 
@@ -543,12 +565,22 @@ export default function PTManagementApp() {
   };
 
   const categoryColors = {
-    '등': { bg: 'bg-gradient-to-r from-blue-500 to-blue-600', text: 'text-blue-400', light: 'bg-blue-500/20', border: 'border-blue-500/30' },
-    '가슴': { bg: 'bg-gradient-to-r from-rose-500 to-rose-600', text: 'text-rose-400', light: 'bg-rose-500/20', border: 'border-rose-500/30' },
-    '하체': { bg: 'bg-gradient-to-r from-emerald-500 to-emerald-600', text: 'text-emerald-400', light: 'bg-emerald-500/20', border: 'border-emerald-500/30' },
-    '어깨': { bg: 'bg-gradient-to-r from-amber-500 to-amber-600', text: 'text-amber-400', light: 'bg-amber-500/20', border: 'border-amber-500/30' },
-    '팔': { bg: 'bg-gradient-to-r from-violet-500 to-violet-600', text: 'text-violet-400', light: 'bg-violet-500/20', border: 'border-violet-500/30' },
-    '코어': { bg: 'bg-gradient-to-r from-cyan-500 to-cyan-600', text: 'text-cyan-400', light: 'bg-cyan-500/20', border: 'border-cyan-500/30' },
+    '등': { bg: 'bg-gradient-to-r from-blue-500 to-blue-600', text: 'text-blue-400', light: 'bg-blue-500/20', border: 'border-blue-500/30', dot: 'bg-blue-400' },
+    '가슴': { bg: 'bg-gradient-to-r from-rose-500 to-rose-600', text: 'text-rose-400', light: 'bg-rose-500/20', border: 'border-rose-500/30', dot: 'bg-rose-400' },
+    '하체': { bg: 'bg-gradient-to-r from-emerald-500 to-emerald-600', text: 'text-emerald-400', light: 'bg-emerald-500/20', border: 'border-emerald-500/30', dot: 'bg-emerald-400' },
+    '어깨': { bg: 'bg-gradient-to-r from-amber-500 to-amber-600', text: 'text-amber-400', light: 'bg-amber-500/20', border: 'border-amber-500/30', dot: 'bg-amber-400' },
+    '팔': { bg: 'bg-gradient-to-r from-violet-500 to-violet-600', text: 'text-violet-400', light: 'bg-violet-500/20', border: 'border-violet-500/30', dot: 'bg-violet-400' },
+    '코어': { bg: 'bg-gradient-to-r from-cyan-500 to-cyan-600', text: 'text-cyan-400', light: 'bg-cyan-500/20', border: 'border-cyan-500/30', dot: 'bg-cyan-400' },
+  };
+
+  // 카테고리 약어
+  const categoryShort = {
+    '등': '등',
+    '가슴': '가슴',
+    '하체': '하체',
+    '어깨': '어깨',
+    '팔': '팔',
+    '코어': '코어',
   };
 
   if (isLoading) {
@@ -580,22 +612,53 @@ export default function PTManagementApp() {
     </div>
   );
 
+  // YouTube 링크 입력 컴포넌트
+  const YouTubeLinkInput = ({ value, onChange, label = '유튜브 링크' }) => (
+    <div>
+      <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">{label}</label>
+      <div className="relative">
+        <Link size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+        <input
+          type="text"
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://youtube.com/watch?v=... 또는 https://youtu.be/..."
+          className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pl-11 text-white placeholder-white/30 focus:outline-none focus:border-red-500/50 transition-all"
+        />
+      </div>
+      {value && getYouTubeThumbnail(value) && (
+        <div className="mt-3 relative rounded-xl overflow-hidden cursor-pointer group" onClick={() => openVideoModal(value)}>
+          <img src={getYouTubeThumbnail(value)} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+            <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center">
+              <Play size={28} className="text-white ml-1" fill="white" />
+            </div>
+          </div>
+          <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/70 rounded text-xs text-white flex items-center gap-1">
+            <Video size={12} className="text-red-500" /> YouTube
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   const ExerciseCard = ({ ex, onEdit, onDelete }) => {
     const [localMemo, setLocalMemo] = useState(ex.memo || '');
     const handleMemoSave = () => { updateExerciseMemo(ex.id, localMemo); };
+    const thumbnail = getYouTubeThumbnail(ex.video);
 
     return (
       <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
-        {ex.video && (
+        {ex.video && thumbnail && (
           <div className="relative bg-black/60 aspect-video cursor-pointer group" onClick={() => openVideoModal(ex.video)}>
-            <video src={ex.video} className="w-full h-full object-contain" preload="metadata" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-              <div className="w-20 h-20 rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center">
+            <img src={thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-xl border border-white/20 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all">
                 <Play size={36} className="text-white ml-1" fill="white" />
               </div>
             </div>
             <div className="absolute bottom-3 right-3 px-3 py-1.5 bg-black/60 backdrop-blur rounded-full text-xs text-white/80 flex items-center gap-1.5 border border-white/10">
-              <Video size={12} /><span>영상 보기</span>
+              <Video size={12} className="text-red-500" /><span>YouTube</span>
             </div>
           </div>
         )}
@@ -632,6 +695,72 @@ export default function PTManagementApp() {
     );
   };
 
+  // 달력 셀 컴포넌트 (PT 별표 + 카테고리 표시)
+  const CalendarCell = ({ date, data, isToday, onClick, size = 'normal' }) => {
+    const hasWorkout = data && data.exercises && data.exercises.length > 0;
+    const isPT = data?.isPT;
+    const category = data?.category;
+    const categoryColor = categoryColors[category];
+
+    if (size === 'small') {
+      // 월간 뷰용 작은 셀
+      return (
+        <button
+          onClick={onClick}
+          className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm relative ${
+            isToday ? 'ring-2 ring-blue-500' : ''
+          } ${
+            hasWorkout
+              ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30'
+              : 'bg-white/[0.02] hover:bg-white/[0.05]'
+          }`}
+        >
+          {/* PT 별표 - 우측 상단 */}
+          {isPT && (
+            <Star size={8} className="absolute top-1 right-1 text-amber-400" fill="currentColor" />
+          )}
+          <span className={`font-semibold ${hasWorkout ? 'text-white' : 'text-white/50'}`}>
+            {date.getDate()}
+          </span>
+          {/* 카테고리 표시 */}
+          {hasWorkout && category && (
+            <span className={`text-[8px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>
+              {categoryShort[category] || category}
+            </span>
+          )}
+        </button>
+      );
+    }
+
+    // 주간 뷰 및 팝업용 셀
+    return (
+      <button
+        onClick={onClick}
+        className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative ${
+          isToday ? 'ring-2 ring-blue-500' : ''
+        } ${
+          hasWorkout
+            ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30'
+            : 'bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06]'
+        }`}
+      >
+        {/* PT 별표 - 우측 상단 */}
+        {isPT && (
+          <Star size={12} className="absolute top-1.5 right-1.5 text-amber-400" fill="currentColor" />
+        )}
+        <span className={`text-lg font-bold ${hasWorkout ? 'text-white' : 'text-white/60'}`}>
+          {date.getDate()}
+        </span>
+        {/* 카테고리 표시 */}
+        {hasWorkout && category && (
+          <span className={`text-[10px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>
+            {categoryShort[category] || category}
+          </span>
+        )}
+      </button>
+    );
+  };
+
   const renderDailyView = () => (
     <div className="max-w-lg mx-auto px-5 py-6">
       {activeTab === 'workout' ? (
@@ -655,7 +784,7 @@ export default function PTManagementApp() {
             <button onClick={() => { setShowLibraryModal(true); setSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-2xl flex items-center justify-center gap-2 font-semibold">
               <Download size={18} /><span>가져오기</span>
             </button>
-            <button onClick={() => { setShowAddModal(true); setExerciseForm({ name: '', category: todayWorkout.category || '', video: null, sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: todayWorkout.isPT, memo: '' }); }} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30">
+            <button onClick={() => { setShowAddModal(true); setExerciseForm({ name: '', category: todayWorkout.category || '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: todayWorkout.isPT, memo: '' }); }} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30">
               <Plus size={18} /><span>새로 추가</span>
             </button>
           </div>
@@ -754,12 +883,15 @@ export default function PTManagementApp() {
             const key = formatDate(date);
             const data = workoutData[key];
             const isToday = formatDate(new Date()) === key;
-            const hasWorkout = data && data.exercises.length > 0;
             return (
-              <button key={idx} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} className={`aspect-square rounded-2xl flex flex-col items-center justify-center ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06]'}`}>
-                <span className={`text-lg font-bold ${hasWorkout ? 'text-white' : 'text-white/60'}`}>{date.getDate()}</span>
-                {data?.isPT && <Star size={14} className="text-amber-400 mt-1" fill="currentColor" />}
-              </button>
+              <CalendarCell
+                key={idx}
+                date={date}
+                data={data}
+                isToday={isToday}
+                onClick={() => { setCurrentDate(date); setViewMode('daily'); }}
+                size="normal"
+              />
             );
           })}
         </div>
@@ -788,12 +920,15 @@ export default function PTManagementApp() {
             const key = formatDate(date);
             const data = workoutData[key];
             const isToday = formatDate(new Date()) === key;
-            const hasWorkout = data && data.exercises.length > 0;
             return (
-              <button key={idx} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}>
-                <span className={`font-semibold ${hasWorkout ? 'text-white' : 'text-white/50'}`}>{date.getDate()}</span>
-                {data?.isPT && <Star size={10} className="text-amber-400 mt-0.5" fill="currentColor" />}
-              </button>
+              <CalendarCell
+                key={idx}
+                date={date}
+                data={data}
+                isToday={isToday}
+                onClick={() => { setCurrentDate(date); setViewMode('daily'); }}
+                size="small"
+              />
             );
           })}
         </div>
@@ -845,7 +980,7 @@ export default function PTManagementApp() {
               <div className="flex items-center gap-3">
                 <h4 className="font-bold text-white text-lg">{ex.name}</h4>
                 <span className={`text-xs px-2.5 py-1 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'} border ${categoryColors[ex.category]?.border || 'border-white/10'}`}>{ex.category}</span>
-                {ex.video && <Video size={16} className="text-blue-400" />}
+                {ex.video && <Video size={16} className="text-red-500" />}
               </div>
               <div className="flex items-center gap-1">
                 <button onClick={() => handleEditLibraryExercise(ex)} className="p-2 text-white/40 hover:text-white hover:bg-white/10 rounded-xl"><Edit3 size={16} /></button>
@@ -859,7 +994,7 @@ export default function PTManagementApp() {
           </div>
         ))}
       </div>
-      <button onClick={() => { setNewLibraryExercise({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: null }); setShowAddLibraryModal(true); }} className="w-full mt-5 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30">
+      <button onClick={() => { setNewLibraryExercise({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' }); setShowAddLibraryModal(true); }} className="w-full mt-5 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30">
         <Plus size={18} /><span>라이브러리에 추가</span>
       </button>
     </div>
@@ -915,10 +1050,37 @@ export default function PTManagementApp() {
               const key = formatDate(date);
               const isToday = formatDate(new Date()) === key;
               const isSelected = formatDate(currentDate) === key;
-              const hasWorkout = workoutData[key]?.exercises?.length > 0;
+              const data = workoutData[key];
+              const hasWorkout = data?.exercises?.length > 0;
+              const isPT = data?.isPT;
+              const category = data?.category;
+              const categoryColor = categoryColors[category];
+
               return (
-                <button key={idx} onClick={() => handleSelectDateFromCalendar(date)} className={`aspect-square rounded-xl flex items-center justify-center text-sm font-semibold ${isSelected ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : isToday ? 'ring-2 ring-blue-500 text-white' : hasWorkout ? 'bg-blue-500/20 text-blue-400' : 'text-white/60 hover:bg-white/[0.05]'}`}>
-                  {date.getDate()}
+                <button
+                  key={idx}
+                  onClick={() => handleSelectDateFromCalendar(date)}
+                  className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold relative ${
+                    isSelected
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg'
+                      : isToday
+                      ? 'ring-2 ring-blue-500 text-white'
+                      : hasWorkout
+                      ? 'bg-blue-500/20 text-blue-400'
+                      : 'text-white/60 hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {/* PT 별표 - 우측 상단 */}
+                  {isPT && !isSelected && (
+                    <Star size={8} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />
+                  )}
+                  <span>{date.getDate()}</span>
+                  {/* 카테고리 표시 */}
+                  {hasWorkout && category && !isSelected && (
+                    <span className={`text-[7px] ${categoryColor?.text || 'text-white/40'}`}>
+                      {categoryShort[category] || category}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -928,14 +1090,26 @@ export default function PTManagementApp() {
     );
   };
 
-  const renderVideoModal = () => (
-    <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50 p-5" onClick={() => setShowVideoModal(false)}>
-      <div className="w-full max-w-3xl" onClick={e => e.stopPropagation()}>
-        <video src={currentVideo} controls autoPlay className="w-full rounded-2xl shadow-2xl" />
-        <button onClick={() => setShowVideoModal(false)} className="absolute top-5 right-5 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"><X size={24} /></button>
+  // YouTube 비디오 모달
+  const renderVideoModal = () => {
+    const embedUrl = getYouTubeEmbedUrl(currentVideo);
+    
+    return (
+      <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-50 p-5" onClick={() => setShowVideoModal(false)}>
+        <div className="w-full max-w-3xl" onClick={e => e.stopPropagation()}>
+          <div className="relative pt-[56.25%] rounded-2xl overflow-hidden shadow-2xl bg-black">
+            <iframe
+              src={embedUrl}
+              className="absolute inset-0 w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+          <button onClick={() => setShowVideoModal(false)} className="absolute top-5 right-5 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"><X size={24} /></button>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white pb-20">
@@ -1023,15 +1197,10 @@ export default function PTManagementApp() {
                     ))}
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">영상</label>
-                  <label className="flex items-center justify-center w-full h-28 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                    {uploadingVideo ? (<div className="text-center"><div className="w-8 h-8 border-3 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div><span className="text-sm text-white/40">업로드 중...</span></div>
-                    ) : exerciseForm.video ? (<div className="text-center"><Play size={28} className="mx-auto text-blue-400 mb-1" /><span className="text-sm text-white/40">영상 선택됨</span></div>
-                    ) : (<div className="text-center"><Video size={28} className="mx-auto text-white/30 mb-1" /><span className="text-sm text-white/30">영상 추가</span></div>)}
-                    <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'exercise')} className="hidden" disabled={uploadingVideo} />
-                  </label>
-                </div>
+                <YouTubeLinkInput
+                  value={exerciseForm.video}
+                  onChange={(val) => setExerciseForm(p => ({ ...p, video: val }))}
+                />
                 <div>
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">세트 정보</label>
                   {exerciseForm.sets.map((set, idx) => <SetInputRow key={idx} set={set} index={idx} onUpdate={updateSetRow} onRemove={removeSetRow} canRemove={exerciseForm.sets.length > 1} />)}
@@ -1100,7 +1269,7 @@ export default function PTManagementApp() {
                       <div className="flex items-center gap-2">
                         <h4 className="font-bold text-white">{ex.name}</h4>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'}`}>{ex.category}</span>
-                        {ex.video && <Video size={14} className="text-blue-400" />}
+                        {ex.video && <Video size={14} className="text-red-500" />}
                       </div>
                       <div className="text-sm text-white/50">{ex.sets.map((s, i) => <span key={i}>{i > 0 && ' → '}{s.weight}kg {s.reps}개</span>)}</div>
                     </div>
@@ -1131,13 +1300,10 @@ export default function PTManagementApp() {
                   {['등', '가슴', '어깨', '하체', '팔', '코어'].map(cat => (<button key={cat} onClick={() => setEditingExercise(p => ({ ...p, category: cat }))} className={`px-4 py-2.5 rounded-xl text-sm font-semibold ${editingExercise.category === cat ? `${categoryColors[cat]?.bg} text-white shadow-lg` : 'bg-white/[0.03] text-white/60 hover:bg-white/[0.06] border border-white/10'}`}>{cat}</button>))}
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">영상</label>
-                <label className="flex items-center justify-center w-full h-28 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                  {editingExercise.video ? (<div className="text-center"><Play size={28} className="mx-auto text-blue-400 mb-1" /><span className="text-sm text-white/40">영상 변경</span></div>) : (<div className="text-center"><Video size={28} className="mx-auto text-white/30 mb-1" /><span className="text-sm text-white/30">영상 추가</span></div>)}
-                  <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'editing')} className="hidden" />
-                </label>
-              </div>
+              <YouTubeLinkInput
+                value={editingExercise.video}
+                onChange={(val) => setEditingExercise(p => ({ ...p, video: val }))}
+              />
               <div>
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">세트 정보</label>
                 {editingExercise.sets.map((set, idx) => <SetInputRow key={idx} set={set} index={idx} onUpdate={updateEditingSet} onRemove={removeEditingSetRow} canRemove={editingExercise.sets.length > 1} />)}
@@ -1191,13 +1357,10 @@ export default function PTManagementApp() {
                   {['등', '가슴', '어깨', '하체', '팔', '코어'].map(cat => (<button key={cat} onClick={() => setEditingLibraryExercise(p => ({ ...p, category: cat }))} className={`px-4 py-2.5 rounded-xl text-sm font-semibold ${editingLibraryExercise.category === cat ? `${categoryColors[cat]?.bg} text-white shadow-lg` : 'bg-white/[0.03] text-white/60 hover:bg-white/[0.06] border border-white/10'}`}>{cat}</button>))}
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">영상</label>
-                <label className="flex items-center justify-center w-full h-28 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                  {editingLibraryExercise.video ? (<div className="text-center"><Play size={28} className="mx-auto text-blue-400 mb-1" /><span className="text-sm text-white/40">영상 변경</span></div>) : (<div className="text-center"><Video size={28} className="mx-auto text-white/30 mb-1" /><span className="text-sm text-white/30">영상 추가</span></div>)}
-                  <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'libraryEdit')} className="hidden" />
-                </label>
-              </div>
+              <YouTubeLinkInput
+                value={editingLibraryExercise.video}
+                onChange={(val) => setEditingLibraryExercise(p => ({ ...p, video: val }))}
+              />
               <div>
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">세트 정보</label>
                 {editingLibraryExercise.sets.map((set, idx) => <SetInputRow key={idx} set={set} index={idx} onUpdate={updateLibraryEditingSet} onRemove={removeLibraryEditingSetRow} canRemove={editingLibraryExercise.sets.length > 1} />)}
@@ -1231,13 +1394,10 @@ export default function PTManagementApp() {
                   {['등', '가슴', '어깨', '하체', '팔', '코어'].map(cat => (<button key={cat} onClick={() => setNewLibraryExercise(p => ({ ...p, category: cat }))} className={`px-4 py-2.5 rounded-xl text-sm font-semibold ${newLibraryExercise.category === cat ? `${categoryColors[cat]?.bg} text-white shadow-lg` : 'bg-white/[0.03] text-white/60 hover:bg-white/[0.06] border border-white/10'}`}>{cat}</button>))}
                 </div>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">영상</label>
-                <label className="flex items-center justify-center w-full h-28 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                  {newLibraryExercise.video ? (<div className="text-center"><Play size={28} className="mx-auto text-blue-400 mb-1" /><span className="text-sm text-white/40">영상 선택됨</span></div>) : (<div className="text-center"><Video size={28} className="mx-auto text-white/30 mb-1" /><span className="text-sm text-white/30">영상 추가</span></div>)}
-                  <input type="file" accept="video/*" onChange={(e) => handleVideoUpload(e, 'library')} className="hidden" />
-                </label>
-              </div>
+              <YouTubeLinkInput
+                value={newLibraryExercise.video}
+                onChange={(val) => setNewLibraryExercise(p => ({ ...p, video: val }))}
+              />
               <div>
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">세트 정보</label>
                 {newLibraryExercise.sets.map((set, idx) => <SetInputRow key={idx} set={set} index={idx} onUpdate={updateNewLibrarySet} onRemove={removeNewLibrarySetRow} canRemove={newLibraryExercise.sets.length > 1} />)}
