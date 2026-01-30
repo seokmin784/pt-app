@@ -305,10 +305,14 @@ export default function PTManagementApp() {
         diets.forEach(d => { obj[d.date] = { meals: d.meals || [] }; });
         setDietData(obj);
       }
-      const { data: library } = await supabase.from('exercise_library').select('*').eq('user_id', uid);
+      
+      // 🔧 수정: library_id 컬럼 사용
+      const { data: library, error: libError } = await supabase.from('exercise_library').select('*').eq('user_id', uid);
+      console.log('라이브러리 로드:', { library, error: libError });
+      
       if (library && library.length > 0) {
         setExerciseLibrary(library.map(ex => ({ 
-          id: ex.id, 
+          id: ex.library_id || ex.id, // library_id 우선 사용
           name: ex.name, 
           category: ex.category, 
           sets: ex.sets || [], 
@@ -325,6 +329,7 @@ export default function PTManagementApp() {
         await saveLibraryToSupabase(uid, libraryWithNewIds);
         setExerciseLibrary(libraryWithNewIds);
       }
+      
       const { data: memos } = await supabase.from('memos').select('*').eq('user_id', uid);
       if (memos) {
         const obj = {};
@@ -367,24 +372,47 @@ export default function PTManagementApp() {
     setIsSyncing(false);
   };
 
-  // 🔧 개선된 라이브러리 저장 - ID 유지
+  // 🔧 수정된 라이브러리 저장 - id 대신 library_id 사용
   const saveLibraryToSupabase = async (uid, library) => {
     if (!uid) return;
+    setIsSyncing(true);
     try {
-      await supabase.from('exercise_library').delete().eq('user_id', uid);
+      // 기존 데이터 삭제
+      const { error: deleteError } = await supabase.from('exercise_library').delete().eq('user_id', uid);
+      if (deleteError) {
+        console.error('라이브러리 삭제 실패:', deleteError);
+        throw deleteError;
+      }
+      
       if (library.length > 0) {
-        await supabase.from('exercise_library').insert(library.map(ex => ({ 
-          id: ex.id, // ID 포함하여 저장
+        // 🔧 핵심 수정: id 제외하고 library_id 컬럼으로 저장
+        const insertData = library.map(ex => ({ 
           user_id: uid, 
+          library_id: ex.id, // id 대신 library_id 컬럼 사용
           name: ex.name, 
           category: ex.category, 
           sets: ex.sets, 
-          description: ex.description, 
+          description: ex.description || '', 
           video: ex.video || '', 
           memo: ex.memo || '' 
-        })));
+        }));
+        
+        console.log('라이브러리 저장 시도:', insertData);
+        
+        const { data, error: insertError } = await supabase.from('exercise_library').insert(insertData);
+        
+        if (insertError) {
+          console.error('라이브러리 저장 실패:', insertError);
+          throw insertError;
+        }
+        
+        console.log('라이브러리 저장 성공:', data);
       }
-    } catch (error) { console.error('라이브러리 저장 실패:', error); }
+    } catch (error) { 
+      console.error('라이브러리 저장 실패:', error); 
+      alert('라이브러리 저장에 실패했습니다: ' + error.message);
+    }
+    setIsSyncing(false);
   };
 
   // 🔧 라이브러리 변경 시 모든 일별 데이터도 업데이트하는 함수
