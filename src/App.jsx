@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -21,29 +21,18 @@ const loadFromStorage = (key, defaultValue) => {
 // YouTube URL을 embed URL로 변환
 const getYouTubeEmbedUrl = (url) => {
   if (!url) return null;
-  
-  // 이미 embed URL인 경우
   if (url.includes('youtube.com/embed/')) return url;
   
   let videoId = null;
-  
-  // youtube.com/watch?v=VIDEO_ID 형식
   const watchMatch = url.match(/youtube\.com\/watch\?v=([^&]+)/);
   if (watchMatch) videoId = watchMatch[1];
-  
-  // youtu.be/VIDEO_ID 형식
   const shortMatch = url.match(/youtu\.be\/([^?]+)/);
   if (shortMatch) videoId = shortMatch[1];
-  
-  // youtube.com/shorts/VIDEO_ID 형식
   const shortsMatch = url.match(/youtube\.com\/shorts\/([^?]+)/);
   if (shortsMatch) videoId = shortsMatch[1];
   
-  if (videoId) {
-    return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
-  }
-  
-  return url; // 변환 실패시 원본 반환
+  if (videoId) return `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+  return url;
 };
 
 // YouTube 썸네일 URL 가져오기
@@ -51,24 +40,115 @@ const getYouTubeThumbnail = (url) => {
   if (!url) return null;
   
   let videoId = null;
-  
   const watchMatch = url.match(/youtube\.com\/watch\?v=([^&]+)/);
   if (watchMatch) videoId = watchMatch[1];
-  
   const shortMatch = url.match(/youtu\.be\/([^?]+)/);
   if (shortMatch) videoId = shortMatch[1];
-  
   const shortsMatch = url.match(/youtube\.com\/shorts\/([^?]+)/);
   if (shortsMatch) videoId = shortsMatch[1];
-  
   const embedMatch = url.match(/youtube\.com\/embed\/([^?]+)/);
   if (embedMatch) videoId = embedMatch[1];
   
-  if (videoId) {
-    return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
-  }
-  
+  if (videoId) return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
   return null;
+};
+
+// 🔧 EXIF orientation을 읽고 이미지를 올바른 방향으로 회전시키는 함수
+const fixImageOrientation = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const view = new DataView(e.target.result);
+      
+      // JPEG 파일인지 확인
+      if (view.getUint16(0, false) !== 0xFFD8) {
+        resolve(file); // JPEG가 아니면 원본 반환
+        return;
+      }
+      
+      let offset = 2;
+      const length = view.byteLength;
+      let orientation = 1; // 기본 orientation
+      
+      while (offset < length) {
+        if (view.getUint16(offset, false) === 0xFFE1) {
+          // EXIF marker 찾음
+          const exifLength = view.getUint16(offset + 2, false);
+          const exifStart = offset + 4;
+          
+          // "Exif" 문자열 확인
+          if (view.getUint32(exifStart, false) === 0x45786966) {
+            const tiffStart = exifStart + 6;
+            const littleEndian = view.getUint16(tiffStart, false) === 0x4949;
+            const ifdStart = tiffStart + view.getUint32(tiffStart + 4, littleEndian);
+            const tagCount = view.getUint16(ifdStart, littleEndian);
+            
+            for (let i = 0; i < tagCount; i++) {
+              const tagOffset = ifdStart + 2 + i * 12;
+              if (view.getUint16(tagOffset, littleEndian) === 0x0112) {
+                orientation = view.getUint16(tagOffset + 8, littleEndian);
+                break;
+              }
+            }
+          }
+          break;
+        }
+        offset += 2;
+        if (view.getUint16(offset, false) === 0xFFD9) break; // End of image
+        offset += view.getUint16(offset, false);
+      }
+      
+      // orientation이 1이면 회전 불필요
+      if (orientation === 1) {
+        resolve(file);
+        return;
+      }
+      
+      // 이미지를 캔버스에 그려서 올바른 방향으로 회전
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // orientation에 따라 캔버스 크기 설정
+        if (orientation >= 5 && orientation <= 8) {
+          canvas.width = img.height;
+          canvas.height = img.width;
+        } else {
+          canvas.width = img.width;
+          canvas.height = img.height;
+        }
+        
+        // orientation에 따라 변환 적용
+        switch (orientation) {
+          case 2: ctx.transform(-1, 0, 0, 1, canvas.width, 0); break;
+          case 3: ctx.transform(-1, 0, 0, -1, canvas.width, canvas.height); break;
+          case 4: ctx.transform(1, 0, 0, -1, 0, canvas.height); break;
+          case 5: ctx.transform(0, 1, 1, 0, 0, 0); break;
+          case 6: ctx.transform(0, 1, -1, 0, canvas.height, 0); break;
+          case 7: ctx.transform(0, -1, -1, 0, canvas.height, canvas.width); break;
+          case 8: ctx.transform(0, -1, 1, 0, 0, canvas.width); break;
+          default: break;
+        }
+        
+        ctx.drawImage(img, 0, 0);
+        
+        canvas.toBlob((blob) => {
+          const correctedFile = new File([blob], file.name || 'image.jpg', {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+          });
+          resolve(correctedFile);
+        }, 'image/jpeg', 0.92);
+      };
+      
+      img.onerror = () => resolve(file);
+      img.src = URL.createObjectURL(file);
+    };
+    
+    reader.onerror = () => resolve(file);
+    reader.readAsArrayBuffer(file);
+  });
 };
 
 export default function PTManagementApp() {
@@ -106,6 +186,8 @@ export default function PTManagementApp() {
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingLibrarySave, setPendingLibrarySave] = useState(null);
+  const [showSyncOptions, setShowSyncOptions] = useState(false);
+  const [syncTarget, setSyncTarget] = useState(null);
 
   const defaultLibrary = [
     { id: 'lib-1', name: 'MTS 로우', category: '등', sets: [{ weight: '30', reps: 15, sets: 1 }, { weight: '50', reps: 15, sets: 1 }, { weight: '70', reps: 10, sets: 2 }], description: '팔각도가 90도정도로 땡겨지게끔 의자 높이 맞춰주기', video: '', memo: '' },
@@ -119,9 +201,8 @@ export default function PTManagementApp() {
   const [workoutData, setWorkoutData] = useState({});
   const [dietData, setDietData] = useState({});
 
-  // 🔧 수정된 이미지 업로드 함수 - 카메라 촬영 지원 개선
+  // 🔧 개선된 이미지 업로드 함수 - EXIF orientation 처리 포함
   const uploadImageToStorage = async (file) => {
-    // 로그인 체크
     if (!userId) {
       console.error('업로드 실패: 로그인 필요');
       return { success: false, error: '로그인이 필요합니다' };
@@ -135,32 +216,24 @@ export default function PTManagementApp() {
     setUploadError(null);
     
     try {
-      // 🔧 파일 타입에서 확장자 추출 (카메라 촬영 시 file.name이 없을 수 있음)
-      let fileExt = 'jpg';
+      // EXIF orientation 보정
+      const correctedFile = await fixImageOrientation(file);
       
-      if (file.type) {
-        // MIME 타입에서 확장자 추출 (예: image/jpeg -> jpg)
-        const mimeMatch = file.type.match(/image\/(\w+)/);
+      let fileExt = 'jpg';
+      if (correctedFile.type) {
+        const mimeMatch = correctedFile.type.match(/image\/(\w+)/);
         if (mimeMatch) {
           fileExt = mimeMatch[1] === 'jpeg' ? 'jpg' : mimeMatch[1];
         }
-      } else if (file.name) {
-        // 파일명에서 확장자 추출
-        const nameParts = file.name.split('.');
-        if (nameParts.length > 1) {
-          fileExt = nameParts.pop().toLowerCase();
-        }
       }
       
-      // 파일명 생성: userId/timestamp.확장자
       const fileName = `${userId}/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
       
-      console.log('업로드 시도:', { fileName, fileType: file.type, fileSize: file.size });
+      console.log('업로드 시도:', { fileName, fileType: correctedFile.type, fileSize: correctedFile.size });
       
-      // Supabase Storage에 업로드
       const { data, error } = await supabase.storage
         .from('video')
-        .upload(fileName, file, {
+        .upload(fileName, correctedFile, {
           cacheControl: '3600',
           upsert: false
         });
@@ -170,7 +243,6 @@ export default function PTManagementApp() {
         throw error;
       }
       
-      // Public URL 가져오기
       const { data: urlData } = supabase.storage
         .from('video')
         .getPublicUrl(fileName);
@@ -184,7 +256,6 @@ export default function PTManagementApp() {
       console.error('이미지 업로드 실패:', error);
       setUploadingPhoto(false);
       
-      // 에러 메시지 분류
       let errorMessage = '업로드에 실패했습니다';
       if (error.message?.includes('Bucket not found')) {
         errorMessage = '저장소를 찾을 수 없습니다';
@@ -198,14 +269,24 @@ export default function PTManagementApp() {
     }
   };
 
-  // 🔧 로컬 미리보기용 - 업로드 실패 시 로컬 URL 사용
-  const createLocalPreview = (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(file);
-    });
+  // 🔧 로컬 미리보기용 - EXIF 보정 포함
+  const createLocalPreview = async (file) => {
+    try {
+      const correctedFile = await fixImageOrientation(file);
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(correctedFile);
+      });
+    } catch (e) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+    }
   };
 
   const loadFromSupabase = async (uid) => {
@@ -226,10 +307,23 @@ export default function PTManagementApp() {
       }
       const { data: library } = await supabase.from('exercise_library').select('*').eq('user_id', uid);
       if (library && library.length > 0) {
-        setExerciseLibrary(library.map(ex => ({ id: ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video || '', memo: ex.memo || '' })));
+        setExerciseLibrary(library.map(ex => ({ 
+          id: ex.id, 
+          name: ex.name, 
+          category: ex.category, 
+          sets: ex.sets || [], 
+          description: ex.description, 
+          video: ex.video || '', 
+          memo: ex.memo || '' 
+        })));
       } else {
-        await saveLibraryToSupabase(uid, defaultLibrary);
-        setExerciseLibrary(defaultLibrary);
+        // 기본 라이브러리 저장
+        const libraryWithNewIds = defaultLibrary.map((ex, idx) => ({
+          ...ex,
+          id: `lib-${Date.now()}-${idx}`
+        }));
+        await saveLibraryToSupabase(uid, libraryWithNewIds);
+        setExerciseLibrary(libraryWithNewIds);
       }
       const { data: memos } = await supabase.from('memos').select('*').eq('user_id', uid);
       if (memos) {
@@ -273,14 +367,77 @@ export default function PTManagementApp() {
     setIsSyncing(false);
   };
 
+  // 🔧 개선된 라이브러리 저장 - ID 유지
   const saveLibraryToSupabase = async (uid, library) => {
     if (!uid) return;
     try {
       await supabase.from('exercise_library').delete().eq('user_id', uid);
       if (library.length > 0) {
-        await supabase.from('exercise_library').insert(library.map(ex => ({ user_id: uid, name: ex.name, category: ex.category, sets: ex.sets, description: ex.description, video: ex.video || '', memo: ex.memo })));
+        await supabase.from('exercise_library').insert(library.map(ex => ({ 
+          id: ex.id, // ID 포함하여 저장
+          user_id: uid, 
+          name: ex.name, 
+          category: ex.category, 
+          sets: ex.sets, 
+          description: ex.description, 
+          video: ex.video || '', 
+          memo: ex.memo || '' 
+        })));
       }
     } catch (error) { console.error('라이브러리 저장 실패:', error); }
+  };
+
+  // 🔧 라이브러리 변경 시 모든 일별 데이터도 업데이트하는 함수
+  const syncLibraryToWorkouts = async (updatedExercise, oldName = null) => {
+    const searchName = oldName || updatedExercise.name;
+    let hasChanges = false;
+    const newWorkoutData = { ...workoutData };
+    
+    // 모든 날짜의 운동 데이터를 순회
+    for (const [date, dayData] of Object.entries(workoutData)) {
+      if (dayData.exercises && dayData.exercises.length > 0) {
+        const updatedExercises = dayData.exercises.map(ex => {
+          if (ex.name === searchName || ex.libraryId === updatedExercise.id) {
+            hasChanges = true;
+            return {
+              ...ex,
+              name: updatedExercise.name,
+              category: updatedExercise.category,
+              sets: JSON.parse(JSON.stringify(updatedExercise.sets)),
+              description: updatedExercise.description,
+              video: updatedExercise.video || '',
+              libraryId: updatedExercise.id
+            };
+          }
+          return ex;
+        });
+        
+        if (JSON.stringify(updatedExercises) !== JSON.stringify(dayData.exercises)) {
+          newWorkoutData[date] = { ...dayData, exercises: updatedExercises };
+        }
+      }
+    }
+    
+    if (hasChanges) {
+      setWorkoutData(newWorkoutData);
+      // 변경된 모든 날짜 저장
+      for (const [date, dayData] of Object.entries(newWorkoutData)) {
+        if (workoutData[date] && JSON.stringify(workoutData[date]) !== JSON.stringify(dayData)) {
+          await saveWorkoutToSupabase(date, dayData);
+        }
+      }
+    }
+    
+    return hasChanges;
+  };
+
+  // 🔧 일별 운동 변경 시 라이브러리도 업데이트할지 묻는 함수
+  const promptSyncToLibrary = (exercise) => {
+    const libraryExercise = exerciseLibrary.find(e => e.name === exercise.name || e.id === exercise.libraryId);
+    if (libraryExercise) {
+      setSyncTarget({ exercise, libraryExercise });
+      setShowSyncOptions(true);
+    }
   };
 
   const saveMemoToSupabase = async (date) => {
@@ -298,7 +455,7 @@ export default function PTManagementApp() {
     try {
       await supabase.from('supplements').delete().eq('user_id', userId);
       if (supps.length > 0) {
-        await supabase.from('supplements').insert(supps.map(s => ({ user_id: userId, name: s.name, dosage: s.dosage })));
+        await supabase.from('supplements').insert(supps.map(s => ({ id: s.id, user_id: userId, name: s.name, dosage: s.dosage })));
       }
     } catch (error) { console.error('영양제 저장 실패:', error); }
   };
@@ -387,24 +544,21 @@ export default function PTManagementApp() {
   const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
   const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null, localPreview: null });
 
-  // 🔧 수정된 사진 업로드 핸들러
+  // 🔧 개선된 사진 업로드 핸들러
   const handlePhotoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // 로그인 체크
     if (!userId) {
       setUploadError('로그인이 필요합니다');
       return;
     }
     
-    // 파일 타입 검증
     if (!file.type.startsWith('image/')) {
       setUploadError('이미지 파일만 업로드 가능합니다');
       return;
     }
     
-    // 파일 크기 검증 (10MB 제한)
     if (file.size > 10 * 1024 * 1024) {
       setUploadError('파일 크기는 10MB 이하여야 합니다');
       return;
@@ -412,7 +566,7 @@ export default function PTManagementApp() {
     
     setUploadError(null);
     
-    // 즉시 로컬 미리보기 표시 (더 나은 UX)
+    // 즉시 로컬 미리보기 표시 (EXIF 보정 포함)
     const localPreview = await createLocalPreview(file);
     if (localPreview) {
       setDietForm(prev => ({ ...prev, localPreview }));
@@ -422,26 +576,27 @@ export default function PTManagementApp() {
     const result = await uploadImageToStorage(file);
     
     if (result.success) {
-      // 업로드 성공 시 서버 URL로 교체
       setDietForm(prev => ({ 
         ...prev, 
         photo: result.url,
-        localPreview: null // 로컬 미리보기 제거
+        localPreview: null
       }));
     } else {
-      // 업로드 실패 시 로컬 미리보기 유지하고 에러 표시
       setUploadError(result.error);
-      // 로컬 미리보기는 유지 (사용자가 다시 시도할 수 있도록)
     }
     
-    // input 초기화 (같은 파일 다시 선택 가능하도록)
     e.target.value = '';
   };
 
   const handleImportFromLibrary = () => {
     const toAdd = selectedExercises.map((id, idx) => {
       const ex = exerciseLibrary.find(e => e.id === id);
-      return { ...ex, id: Date.now() + idx, sets: JSON.parse(JSON.stringify(ex.sets)) };
+      return { 
+        ...ex, 
+        id: Date.now() + idx, 
+        libraryId: ex.id, // 라이브러리 ID 연결
+        sets: JSON.parse(JSON.stringify(ex.sets)) 
+      };
     });
     const cat = toAdd[0]?.category || todayWorkout.category || '미지정';
     const newData = { category: workoutData[dateKey]?.category || cat, isPT: workoutData[dateKey]?.isPT || false, exercises: [...(workoutData[dateKey]?.exercises || []), ...toAdd] };
@@ -460,12 +615,26 @@ export default function PTManagementApp() {
   const categories = ['전체', '등', '가슴', '어깨', '하체', '팔', '코어'];
 
   const handleAddExercise = async () => {
-    const newEx = { id: Date.now(), name: exerciseForm.name, category: exerciseForm.category || todayWorkout.category || '미지정', sets: exerciseForm.sets, description: exerciseForm.description, video: exerciseForm.video, memo: exerciseForm.memo };
+    const libraryId = exerciseLibrary.find(e => e.name === exerciseForm.name)?.id || null;
+    const newEx = { 
+      id: Date.now(), 
+      name: exerciseForm.name, 
+      category: exerciseForm.category || todayWorkout.category || '미지정', 
+      sets: exerciseForm.sets, 
+      description: exerciseForm.description, 
+      video: exerciseForm.video, 
+      memo: exerciseForm.memo,
+      libraryId: libraryId
+    };
+    
     if (exerciseForm.saveToLibrary && !exerciseLibrary.find(e => e.name === exerciseForm.name)) {
-      const newLib = [...exerciseLibrary, { ...newEx, id: `lib-${Date.now()}` }];
+      const newLibEx = { ...newEx, id: `lib-${Date.now()}` };
+      newEx.libraryId = newLibEx.id;
+      const newLib = [...exerciseLibrary, newLibEx];
       setExerciseLibrary(newLib);
       await saveLibraryToSupabase(userId, newLib);
     }
+    
     const newData = { category: workoutData[dateKey]?.category || exerciseForm.category || '미지정', isPT: exerciseForm.isPT || workoutData[dateKey]?.isPT || false, exercises: [...(workoutData[dateKey]?.exercises || []), newEx] };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
@@ -474,7 +643,6 @@ export default function PTManagementApp() {
   };
 
   const handleAddMeal = async () => {
-    // 로컬 미리보기만 있고 서버 URL이 없는 경우 경고
     if (dietForm.localPreview && !dietForm.photo) {
       const confirmAdd = window.confirm('사진이 서버에 업로드되지 않았습니다. 사진 없이 저장하시겠습니까?');
       if (!confirmAdd) return;
@@ -484,7 +652,7 @@ export default function PTManagementApp() {
       id: Date.now(), 
       name: dietForm.name,
       description: dietForm.description,
-      photo: dietForm.photo || null // 서버 URL만 저장
+      photo: dietForm.photo || null
     };
     const newData = { meals: [...(dietData[dateKey]?.meals || []), newMeal] };
     setDietData(prev => ({ ...prev, [dateKey]: newData }));
@@ -508,10 +676,35 @@ export default function PTManagementApp() {
 
   const handleEditExercise = (ex) => { setEditingExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowEditModal(true); };
 
-  const handleSaveExercise = async () => {
+  // 🔧 개선된 운동 저장 - 동기화 옵션 제공
+  const handleSaveExercise = async (syncToLibrary = false) => {
     const newData = { ...workoutData[dateKey], exercises: workoutData[dateKey].exercises.map(ex => ex.id === editingExercise.id ? editingExercise : ex) };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
+    
+    // 라이브러리에도 동기화할지 확인
+    if (syncToLibrary && editingExercise.libraryId) {
+      const newLib = exerciseLibrary.map(ex => {
+        if (ex.id === editingExercise.libraryId) {
+          return {
+            ...ex,
+            name: editingExercise.name,
+            category: editingExercise.category,
+            sets: JSON.parse(JSON.stringify(editingExercise.sets)),
+            description: editingExercise.description,
+            video: editingExercise.video || '',
+            memo: editingExercise.memo || ''
+          };
+        }
+        return ex;
+      });
+      setExerciseLibrary(newLib);
+      await saveLibraryToSupabase(userId, newLib);
+      
+      // 다른 날짜의 같은 운동도 업데이트
+      await syncLibraryToWorkouts(editingExercise);
+    }
+    
     setShowEditModal(false);
     setEditingExercise(null);
   };
@@ -532,6 +725,11 @@ export default function PTManagementApp() {
         video: editingExercise.video || '',
         memo: editingExercise.memo || ''
       };
+      
+      // 현재 편집 중인 운동에 libraryId 연결
+      const updatedExercise = { ...editingExercise, libraryId: newLibraryEx.id };
+      setEditingExercise(updatedExercise);
+      
       const newLib = [...exerciseLibrary, newLibraryEx];
       setExerciseLibrary(newLib);
       await saveLibraryToSupabase(userId, newLib);
@@ -541,6 +739,10 @@ export default function PTManagementApp() {
 
   const handleConfirmOverwrite = async () => {
     if (!pendingLibrarySave) return;
+    
+    const existingLibEx = exerciseLibrary.find(ex => ex.name === pendingLibrarySave.name);
+    const libraryId = existingLibEx?.id;
+    
     const newLib = exerciseLibrary.map(ex => {
       if (ex.name === pendingLibrarySave.name) {
         return {
@@ -556,6 +758,18 @@ export default function PTManagementApp() {
     });
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
+    
+    // 현재 편집 중인 운동에 libraryId 연결
+    if (editingExercise && libraryId) {
+      setEditingExercise(prev => ({ ...prev, libraryId }));
+    }
+    
+    // 다른 날짜의 같은 운동도 업데이트
+    const updatedEx = newLib.find(ex => ex.id === libraryId);
+    if (updatedEx) {
+      await syncLibraryToWorkouts(updatedEx);
+    }
+    
     setShowOverwriteConfirm(false);
     setPendingLibrarySave(null);
     alert('라이브러리가 업데이트되었습니다!');
@@ -563,12 +777,22 @@ export default function PTManagementApp() {
 
   const handleEditLibraryExercise = (ex) => { setEditingLibraryExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowLibraryEditModal(true); };
 
+  // 🔧 라이브러리 편집 시 일별 데이터도 동기화
   const handleSaveLibraryExercise = async () => {
+    const oldName = exerciseLibrary.find(ex => ex.id === editingLibraryExercise.id)?.name;
     const newLib = exerciseLibrary.map(ex => ex.id === editingLibraryExercise.id ? editingLibraryExercise : ex);
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
+    
+    // 모든 일별 데이터 동기화
+    const synced = await syncLibraryToWorkouts(editingLibraryExercise, oldName !== editingLibraryExercise.name ? oldName : null);
+    
     setShowLibraryEditModal(false);
     setEditingLibraryExercise(null);
+    
+    if (synced) {
+      alert('라이브러리와 연결된 모든 운동 기록이 업데이트되었습니다!');
+    }
   };
 
   const handleAddNewLibraryExercise = async () => {
@@ -581,6 +805,7 @@ export default function PTManagementApp() {
   };
 
   const handleDeleteFromLibrary = async (id) => {
+    if (!window.confirm('라이브러리에서 삭제하시겠습니까? 일별 기록은 유지됩니다.')) return;
     const newLib = exerciseLibrary.filter(ex => ex.id !== id);
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
@@ -685,7 +910,6 @@ export default function PTManagementApp() {
     setShowCalendarPopup(false);
   };
 
-  // 라이브러리에 저장되어 있는지 확인
   const isInLibrary = (exerciseName) => {
     return exerciseLibrary.some(ex => ex.name === exerciseName);
   };
@@ -699,7 +923,6 @@ export default function PTManagementApp() {
     '코어': { bg: 'bg-gradient-to-r from-cyan-500 to-cyan-600', text: 'text-cyan-400', light: 'bg-cyan-500/20', border: 'border-cyan-500/30', dot: 'bg-cyan-400' },
   };
 
-  // 카테고리 약어
   const categoryShort = {
     '등': '등',
     '가슴': '가슴',
@@ -738,7 +961,6 @@ export default function PTManagementApp() {
     </div>
   );
 
-  // YouTube 링크 입력 컴포넌트
   const YouTubeLinkInput = ({ value, onChange, label = '유튜브 링크' }) => {
     const [previewPlaying, setPreviewPlaying] = useState(false);
     const thumbnail = getYouTubeThumbnail(value);
@@ -793,14 +1015,13 @@ export default function PTManagementApp() {
     );
   };
 
-  // 운동 카드 컴포넌트 - 인라인 비디오 재생 및 라이브러리 저장 여부 표시
   const ExerciseCard = ({ ex, onEdit, onDelete, exerciseLibrary }) => {
     const [localMemo, setLocalMemo] = useState(ex.memo || '');
     const [isPlaying, setIsPlaying] = useState(false);
     const handleMemoSave = () => { updateExerciseMemo(ex.id, localMemo); };
     const thumbnail = getYouTubeThumbnail(ex.video);
     const embedUrl = getYouTubeEmbedUrl(ex.video);
-    const inLibrary = exerciseLibrary.some(libEx => libEx.name === ex.name);
+    const inLibrary = exerciseLibrary.some(libEx => libEx.name === ex.name || libEx.id === ex.libraryId);
 
     return (
       <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
@@ -877,7 +1098,6 @@ export default function PTManagementApp() {
     );
   };
 
-  // 달력 셀 컴포넌트 (PT 별표 + 카테고리 표시)
   const CalendarCell = ({ date, data, isToday, onClick, size = 'normal' }) => {
     const hasWorkout = data && data.exercises && data.exercises.length > 0;
     const isPT = data?.isPT;
@@ -885,7 +1105,6 @@ export default function PTManagementApp() {
     const categoryColor = categoryColors[category];
 
     if (size === 'small') {
-      // 월간 뷰용 작은 셀
       return (
         <button
           onClick={onClick}
@@ -897,14 +1116,12 @@ export default function PTManagementApp() {
               : 'bg-white/[0.02] hover:bg-white/[0.05]'
           }`}
         >
-          {/* PT 별표 - 우측 상단 */}
           {isPT && (
             <Star size={8} className="absolute top-1 right-1 text-amber-400" fill="currentColor" />
           )}
           <span className={`font-semibold ${hasWorkout ? 'text-white' : 'text-white/50'}`}>
             {date.getDate()}
           </span>
-          {/* 카테고리 표시 */}
           {hasWorkout && category && (
             <span className={`text-[8px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>
               {categoryShort[category] || category}
@@ -914,7 +1131,6 @@ export default function PTManagementApp() {
       );
     }
 
-    // 주간 뷰 및 팝업용 셀
     return (
       <button
         onClick={onClick}
@@ -926,14 +1142,12 @@ export default function PTManagementApp() {
             : 'bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06]'
         }`}
       >
-        {/* PT 별표 - 우측 상단 */}
         {isPT && (
           <Star size={12} className="absolute top-1.5 right-1.5 text-amber-400" fill="currentColor" />
         )}
         <span className={`text-lg font-bold ${hasWorkout ? 'text-white' : 'text-white/60'}`}>
           {date.getDate()}
         </span>
-        {/* 카테고리 표시 */}
         {hasWorkout && category && (
           <span className={`text-[10px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>
             {categoryShort[category] || category}
@@ -976,7 +1190,16 @@ export default function PTManagementApp() {
           <div className="space-y-4">
             {todayDiet.meals.map((meal) => (
               <div key={meal.id} className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
-                {meal.photo && <img src={meal.photo} alt={meal.name} className="w-full aspect-video object-cover" />}
+                {/* 🔧 이미지가 잘리지 않도록 object-contain 사용 */}
+                {meal.photo && (
+                  <div className="bg-black/40 flex items-center justify-center">
+                    <img 
+                      src={meal.photo} 
+                      alt={meal.name} 
+                      className="w-full max-h-80 object-contain" 
+                    />
+                  </div>
+                )}
                 <div className="p-6">
                   <div className="flex justify-between items-start">
                     <h3 className="text-xl font-bold text-emerald-400">{meal.name}</h3>
@@ -1252,12 +1475,10 @@ export default function PTManagementApp() {
                       : 'text-white/60 hover:bg-white/[0.05]'
                   }`}
                 >
-                  {/* PT 별표 - 우측 상단 */}
                   {isPT && !isSelected && (
                     <Star size={8} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />
                   )}
                   <span>{date.getDate()}</span>
-                  {/* 카테고리 표시 */}
                   {hasWorkout && category && !isSelected && (
                     <span className={`text-[7px] ${categoryColor?.text || 'text-white/40'}`}>
                       {categoryShort[category] || category}
@@ -1384,21 +1605,22 @@ export default function PTManagementApp() {
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">식사 이름</label>
                   <input type="text" value={dietForm.name} onChange={(e) => setDietForm(p => ({ ...p, name: e.target.value }))} placeholder="아침, 점심, 저녁..." className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 focus:outline-none focus:border-emerald-500/50" />
                 </div>
-                {/* 🔧 개선된 사진 업로드 UI */}
+                {/* 🔧 개선된 사진 업로드 UI - 이미지 잘리지 않도록 */}
                 <div>
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">사진</label>
-                  <label className="flex items-center justify-center w-full h-40 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05] overflow-hidden relative">
+                  <label className="flex items-center justify-center w-full min-h-[160px] bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05] overflow-hidden relative">
                     {uploadingPhoto ? (
-                      <div className="text-center">
+                      <div className="text-center py-8">
                         <div className="w-10 h-10 border-3 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
                         <span className="text-sm text-white/50">업로드 중...</span>
                       </div>
                     ) : (dietForm.photo || dietForm.localPreview) ? (
-                      <>
+                      <div className="w-full flex flex-col items-center">
+                        {/* 이미지가 잘리지 않도록 object-contain 사용 */}
                         <img 
                           src={dietForm.photo || dietForm.localPreview} 
                           alt="Preview" 
-                          className="w-full h-full object-cover" 
+                          className="max-w-full max-h-60 object-contain" 
                         />
                         {/* 업로드 상태 표시 */}
                         <div className="absolute bottom-2 right-2">
@@ -1418,9 +1640,9 @@ export default function PTManagementApp() {
                             탭하여 변경
                           </span>
                         </div>
-                      </>
+                      </div>
                     ) : (
-                      <div className="text-center">
+                      <div className="text-center py-8">
                         <Camera size={36} className="mx-auto text-white/30 mb-3" />
                         <span className="text-sm text-white/40 block">카메라로 촬영</span>
                         <span className="text-xs text-white/30">또는 앨범에서 선택</span>
@@ -1538,7 +1760,18 @@ export default function PTManagementApp() {
               <button onClick={handleSaveToLibrary} className="w-full py-4 bg-gradient-to-r from-violet-500 to-purple-600 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-xl shadow-purple-500/30">
                 <BookOpen size={18} />라이브러리에 저장
               </button>
-              <button onClick={handleSaveExercise} className="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl font-bold shadow-xl shadow-blue-500/30">저장하기</button>
+              {/* 🔧 라이브러리 동기화 옵션 추가 */}
+              {editingExercise.libraryId && (
+                <div className="flex gap-3">
+                  <button onClick={() => handleSaveExercise(false)} className="flex-1 py-4 bg-white/[0.05] hover:bg-white/10 border border-white/10 rounded-2xl font-bold">오늘만 저장</button>
+                  <button onClick={() => handleSaveExercise(true)} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl font-bold shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2">
+                    <RefreshCw size={16} />전체 동기화
+                  </button>
+                </div>
+              )}
+              {!editingExercise.libraryId && (
+                <button onClick={() => handleSaveExercise(false)} className="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl font-bold shadow-xl shadow-blue-500/30">저장하기</button>
+              )}
             </div>
           </div>
         </div>
@@ -1551,7 +1784,7 @@ export default function PTManagementApp() {
               <div className="w-16 h-16 rounded-2xl bg-amber-500/20 flex items-center justify-center mx-auto mb-4 border border-amber-500/30"><BookOpen size={32} className="text-amber-400" /></div>
               <h3 className="text-xl font-black mb-2">덮어쓰기 확인</h3>
               <p className="text-white/60 leading-relaxed">라이브러리에 "<span className="text-amber-400 font-semibold">{pendingLibrarySave?.name}</span>" 운동이 이미 존재합니다.</p>
-              <p className="text-white/40 text-sm mt-2">기존 데이터를 덮어쓰시겠습니까?</p>
+              <p className="text-white/40 text-sm mt-2">기존 데이터를 덮어쓰고 모든 기록을 업데이트하시겠습니까?</p>
             </div>
             <div className="flex gap-3">
               <button onClick={() => { setShowOverwriteConfirm(false); setPendingLibrarySave(null); }} className="flex-1 py-3.5 bg-white/[0.05] hover:bg-white/10 rounded-xl font-semibold border border-white/10">취소</button>
@@ -1567,6 +1800,14 @@ export default function PTManagementApp() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-black">라이브러리 편집</h2>
               <button onClick={() => { setShowLibraryEditModal(false); setEditingLibraryExercise(null); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><X size={20} /></button>
+            </div>
+            {/* 🔧 동기화 안내 메시지 */}
+            <div className="mb-5 p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+              <div className="flex items-center gap-2 text-blue-400 mb-1">
+                <RefreshCw size={16} />
+                <span className="font-semibold text-sm">자동 동기화</span>
+              </div>
+              <p className="text-xs text-white/50">라이브러리를 수정하면 연결된 모든 일별 운동 기록도 함께 업데이트됩니다.</p>
             </div>
             <div className="space-y-5">
               <div>
@@ -1592,7 +1833,9 @@ export default function PTManagementApp() {
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">자세 설명</label>
                 <textarea value={editingLibraryExercise.description} onChange={(e) => setEditingLibraryExercise(p => ({ ...p, description: e.target.value }))} rows={3} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white resize-none focus:outline-none focus:border-blue-500/50" />
               </div>
-              <button onClick={handleSaveLibraryExercise} className="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl font-bold shadow-xl shadow-blue-500/30">저장하기</button>
+              <button onClick={handleSaveLibraryExercise} className="w-full py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl font-bold shadow-xl shadow-blue-500/30 flex items-center justify-center gap-2">
+                <RefreshCw size={18} />저장 및 전체 동기화
+              </button>
             </div>
           </div>
         </div>
