@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw, RotateCcw, RotateCw, GripVertical, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw, RotateCcw, RotateCw, GripVertical, Image as ImageIcon, Copy } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -248,6 +248,12 @@ export default function PTManagementApp() {
   const [editingMeal, setEditingMeal] = useState(null);
   const [editingMealDate, setEditingMealDate] = useState('');
   const [showMealDatePicker, setShowMealDatePicker] = useState(false);
+
+  // 묶음 가져오기 관련 상태
+  const [showBundleImportModal, setShowBundleImportModal] = useState(false);
+  const [bundleCalendarDate, setBundleCalendarDate] = useState(new Date());
+  const [bundleSelectedDate, setBundleSelectedDate] = useState(null); // 선택한 날짜 key
+  const [bundleSelectedExercises, setBundleSelectedExercises] = useState([]); // 체크된 운동들
 
   // ✅ 날짜 포맷 - 로컬 시간 사용 (UTC가 아닌 한국 시간 기준)
   const formatDate = useCallback((date) => {
@@ -634,6 +640,62 @@ export default function PTManagementApp() {
     const matchCat = selectedCategory === '전체' || ex.category === selectedCategory;
     return matchSearch && matchCat;
   }), [exerciseLibrary, librarySearchTerm, selectedCategory]);
+
+  // ✅ 묶음 가져오기 - 선택한 날짜의 운동을 오늘로 가져오기
+  const handleBundleImport = async () => {
+    if (!bundleSelectedDate || bundleSelectedExercises.length === 0) return;
+    
+    const sourceData = workoutData[bundleSelectedDate];
+    if (!sourceData?.exercises) return;
+    
+    // 선택된 운동만 필터링
+    const exercisesToImport = sourceData.exercises
+      .filter(ex => bundleSelectedExercises.includes(ex.id))
+      .map((ex, idx) => {
+        // 라이브러리에 있으면 라이브러리 최신 데이터 사용
+        const libEx = ex.libraryId ? exerciseLibrary.find(l => l.id === ex.libraryId) : null;
+        const baseEx = libEx || ex;
+        return {
+          ...baseEx,
+          id: Date.now() + idx,
+          libraryId: ex.libraryId || libEx?.id || null,
+          sets: JSON.parse(JSON.stringify(baseEx.sets)),
+          memo: '' // 메모는 초기화
+        };
+      });
+    
+    const existingData = workoutData[dateKey] || { category: '', isPT: false, exercises: [] };
+    const newData = {
+      category: existingData.category || sourceData.category || '',
+      isPT: existingData.isPT || false,
+      exercises: [...(existingData.exercises || []), ...exercisesToImport]
+    };
+    
+    setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
+    await saveWorkoutToSupabase(dateKey, newData);
+    
+    setShowBundleImportModal(false);
+    setBundleSelectedDate(null);
+    setBundleSelectedExercises([]);
+  };
+
+  // 묶음 가져오기에서 날짜 선택 시 해당 날짜 운동 리스트 보기
+  const handleBundleDateSelect = (date) => {
+    const key = formatDate(date);
+    const data = workoutData[key];
+    if (data?.exercises?.length > 0) {
+      setBundleSelectedDate(key);
+      // 기본적으로 모든 운동 선택
+      setBundleSelectedExercises(data.exercises.map(ex => ex.id));
+    }
+  };
+
+  // 묶음 가져오기에서 개별 운동 선택/해제
+  const toggleBundleExercise = (exId) => {
+    setBundleSelectedExercises(prev => 
+      prev.includes(exId) ? prev.filter(id => id !== exId) : [...prev, exId]
+    );
+  };
 
   const handleImportFromLibrary = () => {
     const toAdd = selectedExercises.map((id, idx) => {
@@ -1047,9 +1109,10 @@ export default function PTManagementApp() {
           <div className="space-y-4">
             {todayWorkout.exercises.map((ex) => (<ExerciseCard key={ex.id} ex={ex} onEdit={handleEditExercise} onDelete={handleDeleteExercise} />))}
           </div>
-          <div className="flex gap-3 mt-6">
-            <button onClick={() => { setShowLibraryModal(true); setSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-2xl flex items-center justify-center gap-2 font-semibold"><Download size={18} /><span>가져오기</span></button>
-            <button onClick={() => { setShowAddModal(true); setExerciseForm({ name: '', category: todayWorkout.category || '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: todayWorkout.isPT, memo: '' }); }} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30"><Plus size={18} /><span>새로 추가</span></button>
+          <div className="flex gap-2 mt-6">
+            <button onClick={() => { setShowLibraryModal(true); setSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm"><Download size={16} /><span>가져오기</span></button>
+            <button onClick={() => { setShowBundleImportModal(true); setBundleCalendarDate(new Date()); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-amber-500/30 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm text-amber-400"><Copy size={16} /><span>묶음</span></button>
+            <button onClick={() => { setShowAddModal(true); setExerciseForm({ name: '', category: todayWorkout.category || '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: todayWorkout.isPT, memo: '' }); }} className="flex-1 py-4 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-blue-500/30 text-sm"><Plus size={16} /><span>새로 추가</span></button>
           </div>
         </div>
       ) : activeTab === 'diet' ? (
@@ -1669,6 +1732,181 @@ export default function PTManagementApp() {
               <div><label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">복용량</label><input type="text" value={editingSupplement.dosage} onChange={(e) => setEditingSupplement(p => ({ ...p, dosage: e.target.value }))} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500/50" /></div>
               <button onClick={handleSaveSupplement} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl font-bold shadow-xl shadow-purple-500/30">저장하기</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 묶음 가져오기 모달 */}
+      {showBundleImportModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-50">
+          <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-lg rounded-t-3xl p-6 max-h-[90vh] overflow-y-auto border-t border-white/10 shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <h2 className="text-xl font-black flex items-center gap-2"><Copy size={22} className="text-amber-400" />묶음 가져오기</h2>
+              <button onClick={() => { setShowBundleImportModal(false); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><X size={20} /></button>
+            </div>
+            
+            <p className="text-sm text-white/50 mb-4">이전에 했던 운동을 묶음으로 가져옵니다. 날짜를 선택하세요.</p>
+
+            {/* 묶음 캘린더 네비게이션 */}
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => { const d = new Date(bundleCalendarDate); d.setMonth(d.getMonth() - 1); setBundleCalendarDate(d); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronLeft size={18} /></button>
+              <h3 className="text-base font-bold text-white">{bundleCalendarDate.getFullYear()}년 {bundleCalendarDate.getMonth() + 1}월</h3>
+              <button onClick={() => { const d = new Date(bundleCalendarDate); d.setMonth(d.getMonth() + 1); setBundleCalendarDate(d); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={18} /></button>
+            </div>
+
+            {/* 묶음 캘린더 그리드 */}
+            {(() => {
+              const year = bundleCalendarDate.getFullYear();
+              const month = bundleCalendarDate.getMonth();
+              const daysInMonth = new Date(year, month + 1, 0).getDate();
+              const firstDay = new Date(year, month, 1).getDay();
+              const dates = [];
+              for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
+              
+              return (
+                <div className="grid grid-cols-7 gap-1 mb-5">
+                  {['일','월','화','수','목','금','토'].map(day => (
+                    <div key={day} className="text-center text-xs font-semibold text-white/40 py-1.5">{day}</div>
+                  ))}
+                  {Array(firstDay).fill(null).map((_, idx) => <div key={`e-${idx}`} />)}
+                  {dates.map((date, idx) => {
+                    const key = formatDate(date);
+                    const data = workoutData[key];
+                    const hasWorkout = data?.exercises?.length > 0;
+                    const isSelected = bundleSelectedDate === key;
+                    const isToday = formatDate(new Date()) === key;
+                    const isPT = data?.isPT;
+                    const category = data?.category;
+                    
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => hasWorkout && handleBundleDateSelect(date)}
+                        disabled={!hasWorkout}
+                        className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs relative transition-all ${
+                          isSelected 
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 scale-105' 
+                            : isToday 
+                              ? 'ring-1 ring-blue-500' 
+                              : ''
+                        } ${
+                          hasWorkout && !isSelected
+                            ? 'bg-blue-500/20 text-white hover:bg-blue-500/30 cursor-pointer border border-blue-500/20'
+                            : !hasWorkout 
+                              ? 'text-white/20 cursor-default'
+                              : ''
+                        }`}
+                      >
+                        {isPT && !isSelected && <Star size={6} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />}
+                        <span className="font-semibold">{date.getDate()}</span>
+                        {hasWorkout && category && !isSelected && (
+                          <span className={`text-[7px] mt-0.5 ${categoryColors[category]?.text || 'text-white/40'}`}>
+                            {categoryShort[category] || category}
+                          </span>
+                        )}
+                        {hasWorkout && isSelected && (
+                          <span className="text-[7px] mt-0.5 text-white/80">{data.exercises.length}종목</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            {/* 선택한 날짜의 운동 리스트 */}
+            {bundleSelectedDate && workoutData[bundleSelectedDate]?.exercises?.length > 0 && (
+              <div className="border-t border-white/10 pt-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-white">
+                      {(() => {
+                        const d = new Date(bundleSelectedDate + 'T00:00:00');
+                        const days = ['일','월','화','수','목','금','토'];
+                        return `${d.getMonth()+1}/${d.getDate()} (${days[d.getDay()]})`;
+                      })()}
+                    </h3>
+                    {workoutData[bundleSelectedDate].category && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[workoutData[bundleSelectedDate].category]?.light || 'bg-white/10'} ${categoryColors[workoutData[bundleSelectedDate].category]?.text || 'text-white/60'} border ${categoryColors[workoutData[bundleSelectedDate].category]?.border || 'border-white/10'}`}>
+                        {workoutData[bundleSelectedDate].category}
+                      </span>
+                    )}
+                    {workoutData[bundleSelectedDate].isPT && <Star size={14} className="text-amber-400" fill="currentColor" />}
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const allIds = workoutData[bundleSelectedDate].exercises.map(ex => ex.id);
+                      const allSelected = allIds.every(id => bundleSelectedExercises.includes(id));
+                      setBundleSelectedExercises(allSelected ? [] : allIds);
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/10 text-white/60 font-medium"
+                  >
+                    {workoutData[bundleSelectedDate].exercises.every(ex => bundleSelectedExercises.includes(ex.id)) ? '전체 해제' : '전체 선택'}
+                  </button>
+                </div>
+                
+                <div className="space-y-2 mb-5">
+                  {workoutData[bundleSelectedDate].exercises.map(ex => {
+                    const isChecked = bundleSelectedExercises.includes(ex.id);
+                    return (
+                      <div 
+                        key={ex.id}
+                        onClick={() => toggleBundleExercise(ex.id)}
+                        className={`p-4 rounded-2xl cursor-pointer transition-all ${
+                          isChecked 
+                            ? 'bg-amber-500/15 border-2 border-amber-500/50' 
+                            : 'bg-white/[0.03] border border-white/10 hover:bg-white/[0.06]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${
+                            isChecked ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-500' : 'border-white/30'
+                          }`}>
+                            {isChecked && <Check size={14} className="text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-bold text-white text-sm">{ex.name}</span>
+                              {ex.category && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'}`}>
+                                  {ex.category}
+                                </span>
+                              )}
+                              {ex.video && <Video size={12} className="text-red-500" />}
+                            </div>
+                            <div className="text-xs text-white/40 truncate">
+                              {ex.sets.map((s, si) => (
+                                <span key={si}>{si > 0 && ' → '}<span className="text-amber-400/70">{s.weight}kg</span> {s.reps}개×{s.sets}세트</span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button 
+                  onClick={handleBundleImport} 
+                  disabled={bundleSelectedExercises.length === 0}
+                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 disabled:from-slate-600 disabled:to-slate-600 rounded-2xl font-bold shadow-xl shadow-amber-500/30 disabled:shadow-none flex items-center justify-center gap-2"
+                >
+                  <Copy size={18} />
+                  {bundleSelectedExercises.length > 0 
+                    ? `${bundleSelectedExercises.length}개 운동 가져오기` 
+                    : '운동을 선택하세요'}
+                </button>
+              </div>
+            )}
+
+            {/* 선택 전 안내 */}
+            {!bundleSelectedDate && (
+              <div className="text-center py-8 border-t border-white/10">
+                <Calendar size={36} className="mx-auto text-white/15 mb-3" />
+                <p className="text-white/30 text-sm">운동한 날짜를 선택하면</p>
+                <p className="text-white/30 text-sm">해당 날짜의 운동을 묶음으로 가져올 수 있어요</p>
+              </div>
+            )}
           </div>
         </div>
       )}
