@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw, RotateCcw, RotateCw, GripVertical, Image as ImageIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw, RotateCcw, RotateCw, GripVertical, Image as ImageIcon } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(
@@ -149,6 +149,58 @@ const categoryColors = {
 const categoryShort = { '등': '등', '가슴': '가슴', '하체': '하체', '어깨': '어깨', '팔': '팔', '코어': '코어' };
 const categories = ['전체', '등', '가슴', '어깨', '하체', '팔', '코어'];
 
+// ✅ SetInputRow를 컴포넌트 외부에 정의 → 렌더링마다 재생성 방지 → 포커스 유지
+const SetInputRow = React.memo(({ set, index, onUpdate, onRemove, canRemove }) => (
+  <div className="flex items-center gap-2 mb-3">
+    <div className="flex-1 relative">
+      <input type="text" inputMode="decimal" value={set.weight} onChange={(e) => onUpdate(index, 'weight', e.target.value)} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pr-10 text-white focus:outline-none focus:border-blue-500/50" placeholder="무게" />
+      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">kg</span>
+    </div>
+    <div className="w-24 relative">
+      <input type="text" inputMode="numeric" value={set.reps} onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) onUpdate(index, 'reps', v); }} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-3 pr-7 text-white focus:outline-none focus:border-blue-500/50" placeholder="횟수" />
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 text-sm">개</span>
+    </div>
+    <div className="w-24 relative">
+      <input type="text" inputMode="numeric" value={set.sets} onChange={(e) => { const v = e.target.value; if (v === '' || /^\d+$/.test(v)) onUpdate(index, 'sets', v); }} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-3 pr-9 text-white focus:outline-none focus:border-blue-500/50" placeholder="세트" />
+      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 text-sm">세트</span>
+    </div>
+    {canRemove && <button onClick={() => onRemove(index)} className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 text-white/30 hover:text-red-400 hover:border-red-500/30 flex items-center justify-center"><X size={16} /></button>}
+  </div>
+));
+
+// ✅ YouTubeLinkInput도 외부로 이동
+const YouTubeLinkInput = React.memo(({ value, onChange, label = '유튜브 링크' }) => {
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const thumbnail = getYouTubeThumbnail(value);
+  const embedUrl = getYouTubeEmbedUrl(value);
+  return (
+    <div>
+      <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">{label}</label>
+      <div className="relative">
+        <Link size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
+        <input type="text" value={value || ''} onChange={(e) => { onChange(e.target.value); setPreviewPlaying(false); }} placeholder="https://youtube.com/watch?v=..." className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pl-11 text-white placeholder-white/30 focus:outline-none focus:border-red-500/50" />
+      </div>
+      {value && thumbnail && (
+        <div className="mt-3 relative rounded-xl overflow-hidden">
+          {previewPlaying ? (
+            <div className="relative pt-[56.25%] bg-black">
+              <iframe src={embedUrl} className="absolute inset-0 w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+              <button onClick={() => setPreviewPlaying(false)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10"><X size={16} className="text-white" /></button>
+            </div>
+          ) : (
+            <div className="cursor-pointer group" onClick={() => setPreviewPlaying(true)}>
+              <img src={thumbnail} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+                <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center"><Play size={28} className="text-white ml-1" fill="white" /></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+});
+
 export default function PTManagementApp() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState('workout');
@@ -196,12 +248,15 @@ export default function PTManagementApp() {
   const [editingMeal, setEditingMeal] = useState(null);
   const [editingMealDate, setEditingMealDate] = useState('');
   const [showMealDatePicker, setShowMealDatePicker] = useState(false);
-  
-  // 드래그앤드롭 관련 상태
-  const [draggedMealId, setDraggedMealId] = useState(null);
-  const [dragOverMealId, setDragOverMealId] = useState(null);
 
-  const formatDate = useCallback((date) => date.toISOString().split('T')[0], []);
+  // ✅ 날짜 포맷 - 로컬 시간 사용 (UTC가 아닌 한국 시간 기준)
+  const formatDate = useCallback((date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+  
   const dateKey = useMemo(() => formatDate(currentDate), [currentDate, formatDate]);
 
   const uploadImageToStorage = async (file) => {
@@ -393,11 +448,12 @@ export default function PTManagementApp() {
   const changeWeek = (weeks) => { const d = new Date(currentDate); d.setDate(d.getDate() + (weeks * 7)); setCurrentDate(d); };
   const changeMonth = (months) => { const d = new Date(currentDate); d.setMonth(d.getMonth() + months); setCurrentDate(d); };
 
+  // ✅ 주간 날짜: 일요일 시작
   const getWeekDates = useCallback(() => {
     const dates = [];
     const start = new Date(currentDate);
-    const day = start.getDay();
-    start.setDate(start.getDate() - day + 1);
+    const day = start.getDay(); // 0=일요일
+    start.setDate(start.getDate() - day); // 일요일로 이동
     for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(d.getDate() + i); dates.push(d); }
     return dates;
   }, [currentDate]);
@@ -490,10 +546,10 @@ export default function PTManagementApp() {
     await saveDietToSupabase(dateKey, newData);
   };
 
-  // 식단 편집 기능
+  // ✅ 식단 편집 - dateKey를 올바르게 설정
   const handleEditMeal = (meal) => {
     setEditingMeal({ ...meal });
-    setEditingMealDate(dateKey);
+    setEditingMealDate(dateKey); // 현재 보고있는 날짜 사용
     setShowEditMealModal(true);
   };
 
@@ -504,13 +560,11 @@ export default function PTManagementApp() {
     const newDate = editingMealDate;
     
     if (originalDate === newDate) {
-      // 같은 날짜에서 편집
       const currentMeals = Array.isArray(dietData[originalDate]?.meals) ? dietData[originalDate].meals : [];
       const newData = { meals: currentMeals.map(m => m.id === editingMeal.id ? editingMeal : m) };
       setDietData(prev => ({ ...prev, [originalDate]: newData }));
       await saveDietToSupabase(originalDate, newData);
     } else {
-      // 다른 날짜로 이동
       const originalMeals = Array.isArray(dietData[originalDate]?.meals) ? dietData[originalDate].meals : [];
       const updatedOriginalData = { meals: originalMeals.filter(m => m.id !== editingMeal.id) };
       
@@ -556,46 +610,23 @@ export default function PTManagementApp() {
     e.target.value = '';
   };
 
-  // 드래그앤드롭 핸들러
-  const handleTouchStart = (e, mealId) => {
-    setDraggedMealId(mealId);
-  };
-
-  const handleTouchMove = (e, meals) => {
-    if (!draggedMealId) return;
-    const touch = e.touches[0];
-    const elements = document.elementsFromPoint(touch.clientX, touch.clientY);
-    for (const el of elements) {
-      const mealId = el.getAttribute('data-meal-id');
-      if (mealId && mealId !== String(draggedMealId)) {
-        setDragOverMealId(Number(mealId));
-        break;
-      }
-    }
-  };
-
-  const handleTouchEnd = async () => {
-    if (!draggedMealId || !dragOverMealId) {
-      setDraggedMealId(null);
-      setDragOverMealId(null);
-      return;
-    }
-
+  // ✅ 식단 순서 이동 (위/아래 버튼)
+  const handleMoveMeal = async (mealId, direction) => {
     const currentMeals = Array.isArray(dietData[dateKey]?.meals) ? [...dietData[dateKey].meals] : [];
-    const draggedIndex = currentMeals.findIndex(m => m.id === draggedMealId);
-    const targetIndex = currentMeals.findIndex(m => m.id === dragOverMealId);
-
-    if (draggedIndex !== -1 && targetIndex !== -1) {
-      const [removed] = currentMeals.splice(draggedIndex, 1);
-      currentMeals.splice(targetIndex, 0, removed);
-      
-      const newData = { meals: currentMeals };
-      setDietData(prev => ({ ...prev, [dateKey]: newData }));
-      await saveDietToSupabase(dateKey, newData);
-    }
-
-    setDraggedMealId(null);
-    setDragOverMealId(null);
+    const idx = currentMeals.findIndex(m => m.id === mealId);
+    if (idx === -1) return;
+    
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= currentMeals.length) return;
+    
+    // 부드러운 스왑
+    const temp = currentMeals[idx];
+    currentMeals[idx] = currentMeals[newIdx];
+    currentMeals[newIdx] = temp;
+    
+    const newData = { meals: currentMeals };
+    setDietData(prev => ({ ...prev, [dateKey]: newData }));
+    await saveDietToSupabase(dateKey, newData);
   };
 
   const filteredLibrary = useMemo(() => exerciseLibrary.filter(ex => {
@@ -764,17 +795,17 @@ export default function PTManagementApp() {
     await saveWorkoutToSupabase(dateKey, newData);
   };
 
-  const updateEditingSet = (idx, field, val) => { setEditingExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); };
-  const addEditingSetRow = () => { setEditingExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); };
-  const removeEditingSetRow = (idx) => { setEditingExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); };
+  const updateEditingSet = useCallback((idx, field, val) => { setEditingExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
+  const addEditingSetRow = useCallback(() => { setEditingExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
+  const removeEditingSetRow = useCallback((idx) => { setEditingExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
-  const updateLibraryEditingSet = (idx, field, val) => { setEditingLibraryExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); };
-  const addLibraryEditingSetRow = () => { setEditingLibraryExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); };
-  const removeLibraryEditingSetRow = (idx) => { setEditingLibraryExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); };
+  const updateLibraryEditingSet = useCallback((idx, field, val) => { setEditingLibraryExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
+  const addLibraryEditingSetRow = useCallback(() => { setEditingLibraryExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
+  const removeLibraryEditingSetRow = useCallback((idx) => { setEditingLibraryExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
-  const updateNewLibrarySet = (idx, field, val) => { setNewLibraryExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); };
-  const addNewLibrarySetRow = () => { setNewLibraryExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); };
-  const removeNewLibrarySetRow = (idx) => { setNewLibraryExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); };
+  const updateNewLibrarySet = useCallback((idx, field, val) => { setNewLibraryExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
+  const addNewLibrarySetRow = useCallback(() => { setNewLibraryExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
+  const removeNewLibrarySetRow = useCallback((idx) => { setNewLibraryExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
   const togglePT = async () => {
     const newData = { ...workoutData[dateKey], category: workoutData[dateKey]?.category || '', exercises: workoutData[dateKey]?.exercises || [], isPT: !workoutData[dateKey]?.isPT };
@@ -782,9 +813,9 @@ export default function PTManagementApp() {
     await saveWorkoutToSupabase(dateKey, newData);
   };
 
-  const addSetRow = () => { setExerciseForm(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); };
-  const updateSetRow = (idx, field, val) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); };
-  const removeSetRow = (idx) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); };
+  const addSetRow = useCallback(() => { setExerciseForm(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
+  const updateSetRow = useCallback((idx, field, val) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
+  const removeSetRow = useCallback((idx) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
   const updateCategory = async (cat) => {
     const newData = { ...workoutData[dateKey], category: cat, isPT: workoutData[dateKey]?.isPT || false, exercises: workoutData[dateKey]?.exercises || [] };
@@ -826,57 +857,8 @@ export default function PTManagementApp() {
     );
   }
 
-  const SetInputRow = ({ set, index, onUpdate, onRemove, canRemove }) => (
-    <div className="flex items-center gap-2 mb-3">
-      <div className="flex-1 relative">
-        <input type="text" value={set.weight} onChange={(e) => onUpdate(index, 'weight', e.target.value)} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pr-10 text-white focus:outline-none focus:border-blue-500/50" placeholder="무게" />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 text-sm">kg</span>
-      </div>
-      <div className="w-24 relative">
-        <input type="number" value={set.reps} onChange={(e) => onUpdate(index, 'reps', e.target.value)} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-3 pr-7 text-white focus:outline-none focus:border-blue-500/50" placeholder="횟수" />
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 text-sm">개</span>
-      </div>
-      <div className="w-24 relative">
-        <input type="number" value={set.sets} onChange={(e) => onUpdate(index, 'sets', e.target.value)} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3 py-3 pr-9 text-white focus:outline-none focus:border-blue-500/50" placeholder="세트" />
-        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-white/30 text-sm">세트</span>
-      </div>
-      {canRemove && <button onClick={() => onRemove(index)} className="w-10 h-10 rounded-xl bg-white/[0.03] border border-white/10 text-white/30 hover:text-red-400 hover:border-red-500/30 flex items-center justify-center"><X size={16} /></button>}
-    </div>
-  );
-
-  const YouTubeLinkInput = ({ value, onChange, label = '유튜브 링크' }) => {
-    const [previewPlaying, setPreviewPlaying] = useState(false);
-    const thumbnail = getYouTubeThumbnail(value);
-    const embedUrl = getYouTubeEmbedUrl(value);
-    return (
-      <div>
-        <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">{label}</label>
-        <div className="relative">
-          <Link size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30" />
-          <input type="text" value={value || ''} onChange={(e) => { onChange(e.target.value); setPreviewPlaying(false); }} placeholder="https://youtube.com/watch?v=..." className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 pl-11 text-white placeholder-white/30 focus:outline-none focus:border-red-500/50" />
-        </div>
-        {value && thumbnail && (
-          <div className="mt-3 relative rounded-xl overflow-hidden">
-            {previewPlaying ? (
-              <div className="relative pt-[56.25%] bg-black">
-                <iframe src={embedUrl} className="absolute inset-0 w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
-                <button onClick={() => setPreviewPlaying(false)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10"><X size={16} className="text-white" /></button>
-              </div>
-            ) : (
-              <div className="cursor-pointer group" onClick={() => setPreviewPlaying(true)}>
-                <img src={thumbnail} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
-                  <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center"><Play size={28} className="text-white ml-1" fill="white" /></div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const MealCard = ({ meal, onEdit, onDelete, isDragging, isDragOver, dateKey: cardDateKey, dietData: cardDietData, setDietData: cardSetDietData, saveDietToSupabase: cardSaveDiet }) => {
+  // ✅ MealCard - 드래그 대신 위/아래 이동 버튼 사용
+  const MealCard = ({ meal, mealIndex, totalMeals, onEdit, onDelete, onMoveUp, onMoveDown, dateKey: cardDateKey, dietData: cardDietData, setDietData: cardSetDietData, saveDietToSupabase: cardSaveDiet }) => {
     const [currentPhoto, setCurrentPhoto] = useState(meal.photo);
     const [isRotating, setIsRotating] = useState(false);
 
@@ -897,17 +879,7 @@ export default function PTManagementApp() {
     };
 
     return (
-      <div 
-        data-meal-id={meal.id}
-        className={`bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border overflow-hidden shadow-xl shadow-black/20 transition-all ${
-          isDragging ? 'opacity-50 scale-95 border-emerald-500' : 
-          isDragOver ? 'border-emerald-400 bg-emerald-500/10' : 
-          'border-white/[0.08]'
-        }`}
-        onTouchStart={(e) => handleTouchStart(e, meal.id)}
-        onTouchMove={(e) => handleTouchMove(e, [])}
-        onTouchEnd={handleTouchEnd}
-      >
+      <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20 transition-all">
         {currentPhoto && (
           <div className="relative bg-black/40">
             <img src={currentPhoto} alt="meal" className="w-full max-h-80 object-contain" />
@@ -929,8 +901,30 @@ export default function PTManagementApp() {
         <div className="p-6">
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-3">
-              <div className="cursor-grab active:cursor-grabbing text-white/30 hover:text-white/50 touch-none">
-                <GripVertical size={20} />
+              {/* ✅ 위/아래 이동 버튼 */}
+              <div className="flex flex-col gap-1">
+                <button 
+                  onClick={() => onMoveUp(meal.id)} 
+                  disabled={mealIndex === 0}
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                    mealIndex === 0 
+                      ? 'text-white/10 cursor-not-allowed' 
+                      : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'
+                  }`}
+                >
+                  <ChevronUp size={18} />
+                </button>
+                <button 
+                  onClick={() => onMoveDown(meal.id)} 
+                  disabled={mealIndex === totalMeals - 1}
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                    mealIndex === totalMeals - 1 
+                      ? 'text-white/10 cursor-not-allowed' 
+                      : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'
+                  }`}
+                >
+                  <ChevronDown size={18} />
+                </button>
               </div>
               <h3 className="text-xl font-bold text-emerald-400">{meal.name}</h3>
             </div>
@@ -1062,18 +1056,20 @@ export default function PTManagementApp() {
         <div>
           {todayDiet.meals.length > 1 && (
             <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
-              <p className="text-xs text-emerald-400">💡 왼쪽 핸들을 터치하고 위아래로 드래그하여 순서를 변경할 수 있어요</p>
+              <p className="text-xs text-emerald-400">💡 화살표 버튼으로 식단 순서를 변경할 수 있어요</p>
             </div>
           )}
           <div className="space-y-4">
-            {todayDiet.meals.map((meal) => (
+            {todayDiet.meals.map((meal, idx) => (
               <MealCard 
                 key={meal.id} 
                 meal={meal} 
+                mealIndex={idx}
+                totalMeals={todayDiet.meals.length}
                 onEdit={handleEditMeal} 
                 onDelete={handleDeleteMeal}
-                isDragging={draggedMealId === meal.id}
-                isDragOver={dragOverMealId === meal.id}
+                onMoveUp={(id) => handleMoveMeal(id, 'up')}
+                onMoveDown={(id) => handleMoveMeal(id, 'down')}
                 dateKey={dateKey}
                 dietData={dietData}
                 setDietData={setDietData}
@@ -1137,21 +1133,70 @@ export default function PTManagementApp() {
     </div>
   );
 
+  // ✅ 주간 뷰 - 운동 상세 기록 포함
   const renderWeeklyView = () => {
     const weekDates = getWeekDates();
     const stats = getWeeklyStats();
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
+        {/* ✅ 일~토 순서 */}
         <div className="grid grid-cols-7 gap-2 mb-6">
-          {['월', '화', '수', '목', '금', '토', '일'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50">{day}</div>)}
+          {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50">{day}</div>)}
           {weekDates.map((date, idx) => { const key = formatDate(date); const data = workoutData[key]; const isToday = formatDate(new Date()) === key; return <CalendarCell key={idx} date={date} data={data} isToday={isToday} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="normal" />; })}
         </div>
-        <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl p-6 border border-white/[0.08] shadow-xl shadow-black/20">
+        <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl p-6 border border-white/[0.08] shadow-xl shadow-black/20 mb-5">
           <h3 className="font-bold text-white text-lg mb-4">이번 주 통계</h3>
           <div className="grid grid-cols-3 gap-4">
             <div className="bg-black/30 rounded-2xl p-4 text-center border border-white/[0.05]"><p className="text-3xl font-black text-blue-400">{stats.totalDays}</p><p className="text-sm text-white/50 mt-1">운동일</p></div>
             <div className="bg-black/30 rounded-2xl p-4 text-center border border-white/[0.05]"><p className="text-3xl font-black text-amber-400">{stats.ptDays}</p><p className="text-sm text-white/50 mt-1">PT</p></div>
             <div className="bg-black/30 rounded-2xl p-4 text-center border border-white/[0.05]"><p className="text-3xl font-black text-emerald-400">{stats.totalSets}</p><p className="text-sm text-white/50 mt-1">총 세트</p></div>
+          </div>
+        </div>
+        {/* ✅ 주간 운동 상세 기록 */}
+        <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl p-6 border border-white/[0.08] shadow-xl shadow-black/20">
+          <h3 className="font-bold text-white text-lg mb-4">이번 주 운동 기록</h3>
+          <div className="space-y-4">
+            {weekDates.map((date) => {
+              const key = formatDate(date);
+              const data = workoutData[key];
+              if (!data?.exercises?.length) return null;
+              const days = ['일', '월', '화', '수', '목', '금', '토'];
+              return (
+                <div key={key} className="bg-black/30 rounded-2xl p-4 border border-white/[0.05] cursor-pointer hover:bg-black/40 transition-all" onClick={() => { setCurrentDate(date); setViewMode('daily'); }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-white">{date.getMonth() + 1}/{date.getDate()} ({days[date.getDay()]})</span>
+                      {data.category && (
+                        <span className={`text-xs px-2 py-1 rounded-full ${categoryColors[data.category]?.light || 'bg-white/10'} ${categoryColors[data.category]?.text || 'text-white/60'} border ${categoryColors[data.category]?.border || 'border-white/10'}`}>
+                          {data.category}
+                        </span>
+                      )}
+                      {data.isPT && <Star size={14} className="text-amber-400" fill="currentColor" />}
+                    </div>
+                    <span className="text-xs text-white/40">{data.exercises.length}종목</span>
+                  </div>
+                  <div className="space-y-2">
+                    {data.exercises.map((ex, exIdx) => (
+                      <div key={exIdx} className="flex items-center gap-2 text-sm">
+                        <span className="text-white/60 font-medium">{ex.name}</span>
+                        <span className="text-white/20">·</span>
+                        <span className="text-amber-400/80 text-xs">
+                          {ex.sets.map((s, si) => (
+                            <span key={si}>{si > 0 && ', '}{s.weight}kg×{s.reps}개×{s.sets}세트</span>
+                          ))}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {weekDates.every(d => !workoutData[formatDate(d)]?.exercises?.length) && (
+              <div className="text-center py-8">
+                <Dumbbell size={36} className="mx-auto text-white/15 mb-3" />
+                <p className="text-white/30">이번 주 운동 기록이 없습니다</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1161,11 +1206,13 @@ export default function PTManagementApp() {
   const renderMonthlyView = () => {
     const monthDates = getMonthDates();
     const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
+    // ✅ 일요일 시작이므로 adjustedFirstDay = firstDay 그대로
+    const adjustedFirstDay = firstDay;
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
         <div className="grid grid-cols-7 gap-1.5 mb-4">
-          {['월', '화', '수', '목', '금', '토', '일'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
+          {/* ✅ 일~토 순서 */}
+          {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
           {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
           {monthDates.map((date, idx) => { const key = formatDate(date); const data = workoutData[key]; const isToday = formatDate(new Date()) === key; return <CalendarCell key={idx} date={date} data={data} isToday={isToday} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="small" />; })}
         </div>
@@ -1176,11 +1223,13 @@ export default function PTManagementApp() {
   const renderDietMonthlyView = () => {
     const monthDates = getMonthDates();
     const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
+    // ✅ 일요일 시작
+    const adjustedFirstDay = firstDay;
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
         <div className="grid grid-cols-7 gap-1.5 mb-4">
-          {['월', '화', '수', '목', '금', '토', '일'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
+          {/* ✅ 일~토 순서 */}
+          {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
           {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
           {monthDates.map((date, idx) => { 
             const key = formatDate(date); 
@@ -1251,7 +1300,8 @@ export default function PTManagementApp() {
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
-    const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
+    // ✅ 일요일 시작
+    const adjustedFirstDay = firstDay;
     const dates = [];
     for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
     return (
@@ -1262,7 +1312,8 @@ export default function PTManagementApp() {
             <h3 className="text-lg font-bold text-white">{year}년 {month + 1}월</h3>
             <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={20} /></button>
           </div>
-          <div className="grid grid-cols-7 gap-1.5 mb-3">{['월', '화', '수', '목', '금', '토', '일'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
+          {/* ✅ 일~토 순서 */}
+          <div className="grid grid-cols-7 gap-1.5 mb-3">{['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
           <div className="grid grid-cols-7 gap-1.5">
             {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
             {dates.map((date, idx) => { const key = formatDate(date); const isToday = formatDate(new Date()) === key; const isSelected = formatDate(currentDate) === key; const data = workoutData[key]; const hasWorkout = data?.exercises?.length > 0; const isPT = data?.isPT; const category = data?.category; const categoryColor = categoryColors[category]; return (<button key={idx} onClick={() => { setCurrentDate(date); setShowCalendarPopup(false); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold relative ${isSelected ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : isToday ? 'ring-2 ring-blue-500 text-white' : hasWorkout ? 'bg-blue-500/20 text-blue-400' : 'text-white/60 hover:bg-white/[0.05]'}`}>{isPT && !isSelected && <Star size={8} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />}<span>{date.getDate()}</span>{hasWorkout && category && !isSelected && <span className={`text-[7px] ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}</button>); })}
@@ -1274,12 +1325,13 @@ export default function PTManagementApp() {
 
   // 식단 날짜 선택 팝업
   const renderMealDatePicker = () => {
-    const tempDate = new Date(editingMealDate);
+    const tempDate = new Date(editingMealDate + 'T00:00:00');
     const year = tempDate.getFullYear();
     const month = tempDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
-    const adjustedFirstDay = firstDay === 0 ? 6 : firstDay - 1;
+    // ✅ 일요일 시작
+    const adjustedFirstDay = firstDay;
     const dates = [];
     for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
     
@@ -1287,11 +1339,12 @@ export default function PTManagementApp() {
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-5" onClick={() => setShowMealDatePicker(false)}>
         <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-sm rounded-3xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-between mb-6">
-            <button onClick={() => { const d = new Date(editingMealDate); d.setMonth(d.getMonth() - 1); setEditingMealDate(formatDate(d)); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronLeft size={20} /></button>
+            <button onClick={() => { const d = new Date(editingMealDate + 'T00:00:00'); d.setMonth(d.getMonth() - 1); setEditingMealDate(formatDate(d)); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronLeft size={20} /></button>
             <h3 className="text-lg font-bold text-white">{year}년 {month + 1}월</h3>
-            <button onClick={() => { const d = new Date(editingMealDate); d.setMonth(d.getMonth() + 1); setEditingMealDate(formatDate(d)); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={20} /></button>
+            <button onClick={() => { const d = new Date(editingMealDate + 'T00:00:00'); d.setMonth(d.getMonth() + 1); setEditingMealDate(formatDate(d)); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={20} /></button>
           </div>
-          <div className="grid grid-cols-7 gap-1.5 mb-3">{['월', '화', '수', '목', '금', '토', '일'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
+          {/* ✅ 일~토 순서 */}
+          <div className="grid grid-cols-7 gap-1.5 mb-3">{['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
           <div className="grid grid-cols-7 gap-1.5">
             {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
             {dates.map((date, idx) => { 
@@ -1465,7 +1518,7 @@ export default function PTManagementApp() {
                   onClick={() => setShowMealDatePicker(true)}
                   className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between hover:bg-white/[0.06]"
                 >
-                  <span>{new Date(editingMealDate).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })}</span>
+                  <span>{(() => { const d = new Date(editingMealDate + 'T00:00:00'); return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }); })()}</span>
                   <Calendar size={18} className="text-white/40" />
                 </button>
               </div>
