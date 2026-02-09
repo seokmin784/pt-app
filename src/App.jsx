@@ -148,6 +148,67 @@ const categoryShort = { '등': '등', '가슴': '가슴', '하체': '하체', '�
 const categories = ['전체', '등', '가슴', '어깨', '하체', '팔', '코어'];
 
 // ═══════════════════════════════════════════
+// ✅ 동기부여 명언 30개
+// ═══════════════════════════════════════════
+
+const motivationalQuotes = [
+  { text: "오늘 흘린 땀이 내일의 자신감이 된다.", emoji: "💪" },
+  { text: "포기하고 싶을 때가 가장 성장하는 순간이다.", emoji: "🔥" },
+  { text: "몸이 변하면 마음도 변한다.", emoji: "✨" },
+  { text: "1%의 노력이 모여 100%의 변화를 만든다.", emoji: "📈" },
+  { text: "쉬운 길은 없다. 하지만 그 길은 가치가 있다.", emoji: "🏔️" },
+  { text: "오늘의 운동이 내일의 에너지가 된다.", emoji: "⚡" },
+  { text: "작은 습관이 큰 변화를 만든다.", emoji: "🌱" },
+  { text: "어제보다 나은 오늘을 만들자.", emoji: "🌅" },
+  { text: "통증은 일시적이지만, 포기는 영원하다.", emoji: "💎" },
+  { text: "당신의 한계는 당신이 정하는 것이다.", emoji: "🚀" },
+  { text: "운동은 몸에게 주는 최고의 선물이다.", emoji: "🎁" },
+  { text: "꾸준함이 재능을 이긴다.", emoji: "🐢" },
+  { text: "오늘 안 하면 내일은 더 힘들다.", emoji: "⏰" },
+  { text: "건강한 몸에 건강한 정신이 깃든다.", emoji: "🧠" },
+  { text: "목표를 향해 한 걸음씩, 매일매일.", emoji: "👣" },
+  { text: "자기 자신과의 약속을 지켜라.", emoji: "🤝" },
+  { text: "운동하는 시간은 절대 낭비가 아니다.", emoji: "⏳" },
+  { text: "변명 대신 운동화를 신어라.", emoji: "👟" },
+  { text: "강해지는 것은 선택이다. 매일 선택하라.", emoji: "🏋️" },
+  { text: "지금 시작하면 1년 후 감사할 것이다.", emoji: "📅" },
+  { text: "완벽하지 않아도 괜찮다. 꾸준하면 된다.", emoji: "🎯" },
+  { text: "힘든 운동 후의 성취감을 기억하라.", emoji: "🏆" },
+  { text: "몸은 당신이 하는 만큼 보답한다.", emoji: "💖" },
+  { text: "오늘의 고통이 내일의 영광이 된다.", emoji: "👑" },
+  { text: "할 수 있다고 믿는 순간, 이미 반은 성공이다.", emoji: "🌟" },
+  { text: "운동은 최고의 자기관리다.", emoji: "🛡️" },
+  { text: "남들이 쉴 때 나는 성장한다.", emoji: "🌙" },
+  { text: "근육은 배신하지 않는다.", emoji: "💪" },
+  { text: "지금 이 순간이 가장 젊은 당신이다.", emoji: "⭐" },
+  { text: "매일 1%씩 나아지면 1년 후 37배가 된다.", emoji: "📊" },
+];
+
+const getRandomQuote = () => motivationalQuotes[Math.floor(Math.random() * motivationalQuotes.length)];
+
+// ═══════════════════════════════════════════
+// ✅ localStorage 캐시 헬퍼 (즉시 로딩용)
+// ═══════════════════════════════════════════
+
+const CACHE_KEYS = {
+  workouts: (uid) => `pt-cache-workouts-${uid}`,
+  diets: (uid) => `pt-cache-diets-${uid}`,
+  library: (uid) => `pt-cache-library-${uid}`,
+  memos: (uid) => `pt-cache-memos-${uid}`,
+  supplements: (uid) => `pt-cache-supplements-${uid}`,
+  supplementLogs: (uid) => `pt-cache-suppLogs-${uid}`,
+  waterLogs: (uid) => `pt-cache-waterLogs-${uid}`,
+};
+
+const saveToCache = (key, data) => {
+  try { localStorage.setItem(key, JSON.stringify(data)); } catch {}
+};
+
+const loadFromCache = (key) => {
+  try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : null; } catch { return null; }
+};
+
+// ═══════════════════════════════════════════
 // ✅ 외부 메모이즈 컴포넌트들 (핵심 최적화)
 // ═══════════════════════════════════════════
 
@@ -372,15 +433,32 @@ export default function PTManagementApp() {
   const [userId, setUserId] = useState(() => {
     try { return JSON.parse(localStorage.getItem('pt-user-id')); } catch { return null; }
   });
+
+  // ✅ 캐시에서 즉시 로드 (로딩 없이 바로 화면 표시)
+  const [isLoading, setIsLoading] = useState(() => {
+    try {
+      const uid = JSON.parse(localStorage.getItem('pt-user-id'));
+      if (!uid) return false; // 로그인 안 됐으면 로딩 불필요
+      const cached = localStorage.getItem(CACHE_KEYS.workouts(uid));
+      return !cached; // 캐시 있으면 로딩 스킵
+    } catch { return true; }
+  });
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [loginInput, setLoginInput] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [memoData, setMemoData] = useState({});
+  const [memoData, setMemoData] = useState(() => {
+    try { const uid = JSON.parse(localStorage.getItem('pt-user-id')); if (uid) { const c = loadFromCache(CACHE_KEYS.memos(uid)); if (c) return c; } } catch {} return {};
+  });
   const [memoSaved, setMemoSaved] = useState(true);
-  const [supplements, setSupplements] = useState([]);
-  const [supplementData, setSupplementData] = useState({});
-  const [waterIntake, setWaterIntake] = useState({});
+  const [supplements, setSupplements] = useState(() => {
+    try { const uid = JSON.parse(localStorage.getItem('pt-user-id')); if (uid) { const c = loadFromCache(CACHE_KEYS.supplements(uid)); if (c) return c; } } catch {} return [];
+  });
+  const [supplementData, setSupplementData] = useState(() => {
+    try { const uid = JSON.parse(localStorage.getItem('pt-user-id')); if (uid) { const c = loadFromCache(CACHE_KEYS.supplementLogs(uid)); if (c) return c; } } catch {} return {};
+  });
+  const [waterIntake, setWaterIntake] = useState(() => {
+    try { const uid = JSON.parse(localStorage.getItem('pt-user-id')); if (uid) { const c = loadFromCache(CACHE_KEYS.waterLogs(uid)); if (c) return c; } } catch {} return {};
+  });
   const [showAddSupplementModal, setShowAddSupplementModal] = useState(false);
   const [newSupplement, setNewSupplement] = useState({ name: '', dosage: '' });
   const [editingSupplement, setEditingSupplement] = useState(null);
@@ -394,9 +472,27 @@ export default function PTManagementApp() {
   const [showCalendarPopup, setShowCalendarPopup] = useState(false);
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingLibrarySave, setPendingLibrarySave] = useState(null);
-  const [exerciseLibrary, setExerciseLibrary] = useState(defaultLibrary);
-  const [workoutData, setWorkoutData] = useState({});
-  const [dietData, setDietData] = useState({});
+  const [exerciseLibrary, setExerciseLibrary] = useState(() => {
+    try {
+      const uid = JSON.parse(localStorage.getItem('pt-user-id'));
+      if (uid) { const c = loadFromCache(CACHE_KEYS.library(uid)); if (c) return c; }
+    } catch {}
+    return defaultLibrary;
+  });
+  const [workoutData, setWorkoutData] = useState(() => {
+    try {
+      const uid = JSON.parse(localStorage.getItem('pt-user-id'));
+      if (uid) { const c = loadFromCache(CACHE_KEYS.workouts(uid)); if (c) return c; }
+    } catch {}
+    return {};
+  });
+  const [dietData, setDietData] = useState(() => {
+    try {
+      const uid = JSON.parse(localStorage.getItem('pt-user-id'));
+      if (uid) { const c = loadFromCache(CACHE_KEYS.diets(uid)); if (c) return c; }
+    } catch {}
+    return {};
+  });
   const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
   const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null, localPreview: null });
   const [showEditMealModal, setShowEditMealModal] = useState(false);
@@ -460,35 +556,21 @@ export default function PTManagementApp() {
   }, []);
 
   // ═══════════════════════════════════════════
-  // ✅ 핵심 최적화: 초기 데이터 로딩 - 필수 데이터 먼저, 나머지 지연 로드
+  // ✅ 핵심 최적화: 캐시 우선 로딩 → Supabase 백그라운드 동기화
   // ═══════════════════════════════════════════
 
   const loadFromSupabase = useCallback(async (uid) => {
     if (!uid) return;
-    setIsLoading(true);
+    
+    // 캐시가 없을 때만 로딩 스피너 표시
+    const hasCache = !!loadFromCache(CACHE_KEYS.workouts(uid));
+    if (!hasCache) setIsLoading(true);
+    
     try {
-      // ✅ Phase 1: 화면에 바로 필요한 핵심 데이터만 먼저 로드
-      const [workoutsRes, dietsRes] = await Promise.all([
+      // ✅ 모든 데이터를 한번에 병렬 로드 (Phase 분리 제거 → 총 시간 단축)
+      const [workoutsRes, dietsRes, libraryRes, memosRes, suppsRes, suppDataRes, waterRes] = await Promise.all([
         supabase.from('workouts').select('*').eq('user_id', uid),
         supabase.from('diets').select('*').eq('user_id', uid),
-      ]);
-      
-      if (workoutsRes.data) {
-        const obj = {};
-        workoutsRes.data.forEach(w => { obj[w.date] = { category: w.category, isPT: w.is_pt, exercises: w.exercises || [] }; });
-        setWorkoutData(obj);
-      }
-      if (dietsRes.data) {
-        const obj = {};
-        dietsRes.data.forEach(d => { obj[d.date] = { meals: Array.isArray(d.meals) ? d.meals : [] }; });
-        setDietData(obj);
-      }
-      
-      // ✅ Phase 1 완료 → 로딩 해제 → 화면 즉시 렌더링
-      setIsLoading(false);
-      
-      // ✅ Phase 2: 나머지 데이터 백그라운드 로드 (화면 표시 후)
-      const [libraryRes, memosRes, suppsRes, suppDataRes, waterRes] = await Promise.all([
         supabase.from('exercise_library').select('*').eq('user_id', uid),
         supabase.from('memos').select('*').eq('user_id', uid),
         supabase.from('supplements').select('*').eq('user_id', uid),
@@ -496,29 +578,50 @@ export default function PTManagementApp() {
         supabase.from('water_logs').select('*').eq('user_id', uid)
       ]);
 
+      if (workoutsRes.data) {
+        const obj = {};
+        workoutsRes.data.forEach(w => { obj[w.date] = { category: w.category, isPT: w.is_pt, exercises: w.exercises || [] }; });
+        setWorkoutData(obj);
+        saveToCache(CACHE_KEYS.workouts(uid), obj);
+      }
+      if (dietsRes.data) {
+        const obj = {};
+        dietsRes.data.forEach(d => { obj[d.date] = { meals: Array.isArray(d.meals) ? d.meals : [] }; });
+        setDietData(obj);
+        saveToCache(CACHE_KEYS.diets(uid), obj);
+      }
       if (libraryRes.data && libraryRes.data.length > 0) {
-        setExerciseLibrary(libraryRes.data.map(ex => ({ id: ex.library_id || ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video || '', memo: ex.memo || '' })));
+        const lib = libraryRes.data.map(ex => ({ id: ex.library_id || ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video || '', memo: ex.memo || '' }));
+        setExerciseLibrary(lib);
+        saveToCache(CACHE_KEYS.library(uid), lib);
       }
       if (memosRes.data) {
         const obj = {};
         memosRes.data.forEach(m => { obj[m.date] = m.content || ''; });
         setMemoData(obj);
+        saveToCache(CACHE_KEYS.memos(uid), obj);
       }
-      if (suppsRes.data) setSupplements(suppsRes.data.map(s => ({ id: s.id, name: s.name, dosage: s.dosage })));
+      if (suppsRes.data) {
+        const s = suppsRes.data.map(s => ({ id: s.id, name: s.name, dosage: s.dosage }));
+        setSupplements(s);
+        saveToCache(CACHE_KEYS.supplements(uid), s);
+      }
       if (suppDataRes.data) {
         const obj = {};
         suppDataRes.data.forEach(s => { obj[s.date] = s.taken || []; });
         setSupplementData(obj);
+        saveToCache(CACHE_KEYS.supplementLogs(uid), obj);
       }
       if (waterRes.data) {
         const obj = {};
         waterRes.data.forEach(w => { obj[w.date] = w.amount || 0; });
         setWaterIntake(obj);
+        saveToCache(CACHE_KEYS.waterLogs(uid), obj);
       }
     } catch (error) { 
       console.error('불러오기 실패:', error); 
-      setIsLoading(false);
     }
+    setIsLoading(false);
   }, []);
 
   const saveWorkoutToSupabase = useCallback(async (date, data) => {
@@ -609,6 +712,15 @@ export default function PTManagementApp() {
     if (userId) { loadFromSupabase(userId); }
     else { setIsLoading(false); setShowLoginModal(true); }
   }, [userId, loadFromSupabase]);
+
+  // ✅ 데이터 변경 시 캐시 자동 동기화
+  useEffect(() => { if (userId && Object.keys(workoutData).length) saveToCache(CACHE_KEYS.workouts(userId), workoutData); }, [workoutData, userId]);
+  useEffect(() => { if (userId && Object.keys(dietData).length) saveToCache(CACHE_KEYS.diets(userId), dietData); }, [dietData, userId]);
+  useEffect(() => { if (userId && exerciseLibrary.length && exerciseLibrary !== defaultLibrary) saveToCache(CACHE_KEYS.library(userId), exerciseLibrary); }, [exerciseLibrary, userId]);
+  useEffect(() => { if (userId && Object.keys(memoData).length) saveToCache(CACHE_KEYS.memos(userId), memoData); }, [memoData, userId]);
+  useEffect(() => { if (userId && supplements.length) saveToCache(CACHE_KEYS.supplements(userId), supplements); }, [supplements, userId]);
+  useEffect(() => { if (userId && Object.keys(supplementData).length) saveToCache(CACHE_KEYS.supplementLogs(userId), supplementData); }, [supplementData, userId]);
+  useEffect(() => { if (userId && Object.keys(waterIntake).length) saveToCache(CACHE_KEYS.waterLogs(userId), waterIntake); }, [waterIntake, userId]);
 
   const formatDisplayDate = useCallback((date) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
@@ -1041,12 +1153,17 @@ export default function PTManagementApp() {
   // ✅ 로딩 화면
   // ═══════════════════════════════════════════
 
+  // ✅ 로딩 명언 (컴포넌트 마운트 시 1회 랜덤 선택)
+  const loadingQuote = useMemo(() => getRandomQuote(), []);
+
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-white/60 text-lg">불러오는 중...</p>
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-8">
+        <div className="text-center max-w-sm">
+          <div className="text-5xl mb-6 animate-bounce">{loadingQuote.emoji}</div>
+          <div className="w-12 h-12 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+          <p className="text-white/90 text-lg font-bold leading-relaxed mb-3">{loadingQuote.text}</p>
+          <p className="text-white/30 text-sm">데이터를 불러오는 중...</p>
         </div>
       </div>
     );
@@ -1092,6 +1209,9 @@ export default function PTManagementApp() {
         </div>
       ) : activeTab === 'diet' ? (
         <div>
+          <div className="sticky top-0 z-20 pt-1 pb-3 bg-[#0a0a0f]">
+            <button onClick={() => { setShowAddModal(true); setDietForm({ name: '', description: '', photo: null, localPreview: null }); setUploadError(null); }} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-emerald-500/30"><Plus size={18} /><span>식단 추가</span></button>
+          </div>
           {todayDiet.meals.length > 1 && (
             <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center">
               <p className="text-xs text-emerald-400">💡 화살표 버튼으로 식단 순서를 변경할 수 있어요</p>
@@ -1112,7 +1232,6 @@ export default function PTManagementApp() {
               />
             ))}
           </div>
-          <button onClick={() => { setShowAddModal(true); setDietForm({ name: '', description: '', photo: null, localPreview: null }); setUploadError(null); }} className="w-full mt-6 py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-xl shadow-emerald-500/30"><Plus size={18} /><span>식단 추가</span></button>
         </div>
       ) : activeTab === 'supplement' ? (
         <div>
