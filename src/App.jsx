@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, X, Video, Dumbbell, Utensils, Trash2, Calendar, Play, Download, Search, Check, Star, User, FileText, Save, Pill, Droplets, Edit3, BookOpen, Camera, Link, Pause, AlertCircle, RefreshCw, RotateCcw, RotateCw, GripVertical, Image as ImageIcon, Copy } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -6,6 +6,10 @@ const supabase = createClient(
   'https://iwwpkxijzmzztidwfqjc.supabase.co',
   'sb_publishable_CMWAbofM1yVJeWGwLQgGkg_hycvKjfd'
 );
+
+// ═══════════════════════════════════════════
+// ✅ 유틸리티 함수들 (변경 없음, 컴포넌트 외부)
+// ═══════════════════════════════════════════
 
 const getYouTubeEmbedUrl = (url) => {
   if (!url) return null;
@@ -65,10 +69,7 @@ const fixImageOrientation = (file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const view = new DataView(e.target.result);
-      if (view.getUint16(0, false) !== 0xFFD8) {
-        resolve(file);
-        return;
-      }
+      if (view.getUint16(0, false) !== 0xFFD8) { resolve(file); return; }
       let offset = 2;
       const length = view.byteLength;
       let orientation = 1;
@@ -98,27 +99,20 @@ const fixImageOrientation = (file) => {
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        let rotation = 0;
-        let swapDims = false;
+        let rotation = 0, swapDims = false;
         switch (orientation) {
           case 3: rotation = 180; break;
           case 6: rotation = 90; swapDims = true; break;
           case 8: rotation = -90; swapDims = true; break;
           default: break;
         }
-        if (swapDims) {
-          canvas.width = img.height;
-          canvas.height = img.width;
-        } else {
-          canvas.width = img.width;
-          canvas.height = img.height;
-        }
+        if (swapDims) { canvas.width = img.height; canvas.height = img.width; }
+        else { canvas.width = img.width; canvas.height = img.height; }
         ctx.translate(canvas.width / 2, canvas.height / 2);
         ctx.rotate((rotation * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
         canvas.toBlob((blob) => {
-          const correctedFile = new File([blob], file.name || 'image.jpg', { type: 'image/jpeg', lastModified: Date.now() });
-          resolve(correctedFile);
+          resolve(new File([blob], file.name || 'image.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
         }, 'image/jpeg', 0.92);
       };
       img.onerror = () => resolve(file);
@@ -128,6 +122,10 @@ const fixImageOrientation = (file) => {
     reader.readAsArrayBuffer(file);
   });
 };
+
+// ═══════════════════════════════════════════
+// ✅ 상수 (변경 없음)
+// ═══════════════════════════════════════════
 
 const defaultLibrary = [
   { id: 'lib-1', name: 'MTS 로우', category: '등', sets: [{ weight: '30', reps: 15, sets: 1 }, { weight: '50', reps: 15, sets: 1 }, { weight: '70', reps: 10, sets: 2 }], description: '팔각도가 90도정도로 땡겨지게끔 의자 높이 맞춰주기', video: '', memo: '' },
@@ -149,7 +147,10 @@ const categoryColors = {
 const categoryShort = { '등': '등', '가슴': '가슴', '하체': '하체', '어깨': '어깨', '팔': '팔', '코어': '코어' };
 const categories = ['전체', '등', '가슴', '어깨', '하체', '팔', '코어'];
 
-// ✅ SetInputRow를 컴포넌트 외부에 정의 → 렌더링마다 재생성 방지 → 포커스 유지
+// ═══════════════════════════════════════════
+// ✅ 외부 메모이즈 컴포넌트들 (핵심 최적화)
+// ═══════════════════════════════════════════
+
 const SetInputRow = React.memo(({ set, index, onUpdate, onRemove, canRemove }) => (
   <div className="flex items-center gap-2 mb-3">
     <div className="flex-1 relative">
@@ -168,7 +169,6 @@ const SetInputRow = React.memo(({ set, index, onUpdate, onRemove, canRemove }) =
   </div>
 ));
 
-// ✅ YouTubeLinkInput도 외부로 이동
 const YouTubeLinkInput = React.memo(({ value, onChange, label = '유튜브 링크' }) => {
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const thumbnail = getYouTubeThumbnail(value);
@@ -189,7 +189,7 @@ const YouTubeLinkInput = React.memo(({ value, onChange, label = '유튜브 링�
             </div>
           ) : (
             <div className="cursor-pointer group" onClick={() => setPreviewPlaying(true)}>
-              <img src={thumbnail} alt="YouTube thumbnail" className="w-full aspect-video object-cover" />
+              <img src={thumbnail} alt="YouTube thumbnail" className="w-full aspect-video object-cover" loading="lazy" />
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
                 <div className="w-16 h-16 rounded-full bg-red-600 flex items-center justify-center"><Play size={28} className="text-white ml-1" fill="white" /></div>
               </div>
@@ -200,6 +200,163 @@ const YouTubeLinkInput = React.memo(({ value, onChange, label = '유튜브 링�
     </div>
   );
 });
+
+// ✅ CalendarCell - 외부로 이동 + React.memo
+const CalendarCell = React.memo(({ date, data, isToday, onClick, size = 'normal' }) => {
+  const hasWorkout = data?.exercises?.length > 0;
+  const isPT = data?.isPT;
+  const category = data?.category;
+  const categoryColor = categoryColors[category];
+  const dateNum = date.getDate();
+  
+  if (size === 'small') {
+    return (
+      <button onClick={onClick} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm relative ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}>
+        {isPT && <Star size={8} className="absolute top-1 right-1 text-amber-400" fill="currentColor" />}
+        <span className={`font-semibold ${hasWorkout ? 'text-white' : 'text-white/50'}`}>{dateNum}</span>
+        {hasWorkout && category && <span className={`text-[8px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}
+      </button>
+    );
+  }
+  return (
+    <button onClick={onClick} className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06]'}`}>
+      {isPT && <Star size={12} className="absolute top-1.5 right-1.5 text-amber-400" fill="currentColor" />}
+      <span className={`text-lg font-bold ${hasWorkout ? 'text-white' : 'text-white/60'}`}>{dateNum}</span>
+      {hasWorkout && category && <span className={`text-[10px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}
+    </button>
+  );
+});
+
+// ✅ MealCard - 외부로 이동 + React.memo
+const MealCard = React.memo(({ meal, mealIndex, totalMeals, onEdit, onDelete, onMoveUp, onMoveDown, onRotatePhoto }) => {
+  const [currentPhoto, setCurrentPhoto] = useState(meal.photo);
+  const [isRotating, setIsRotating] = useState(false);
+
+  // photo prop이 바뀌면 동기화
+  useEffect(() => { setCurrentPhoto(meal.photo); }, [meal.photo]);
+
+  const handleRotate = async (direction) => {
+    if (isRotating || !currentPhoto) return;
+    setIsRotating(true);
+    const rotationDegrees = direction === 'left' ? -90 : 90;
+    try {
+      const rotatedDataUrl = await rotateImageFromUrl(currentPhoto, rotationDegrees);
+      setCurrentPhoto(rotatedDataUrl);
+      if (onRotatePhoto) onRotatePhoto(meal.id, rotatedDataUrl);
+    } catch (error) { console.error('회전 실패:', error); }
+    setIsRotating(false);
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20 transition-all">
+      {currentPhoto && (
+        <div className="relative bg-black/40">
+          <img src={currentPhoto} alt="meal" className="w-full max-h-80 object-contain" loading="lazy" />
+          <div className="absolute bottom-3 right-3 flex gap-2">
+            <button onClick={() => handleRotate('left')} disabled={isRotating} className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center border border-white/20 disabled:opacity-50">
+              <RotateCcw size={18} className="text-white" />
+            </button>
+            <button onClick={() => handleRotate('right')} disabled={isRotating} className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center border border-white/20 disabled:opacity-50">
+              <RotateCw size={18} className="text-white" />
+            </button>
+          </div>
+          {isRotating && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="p-6">
+        <div className="flex justify-between items-start">
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-1">
+              <button onClick={() => onMoveUp(meal.id)} disabled={mealIndex === 0} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${mealIndex === 0 ? 'text-white/10 cursor-not-allowed' : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'}`}><ChevronUp size={18} /></button>
+              <button onClick={() => onMoveDown(meal.id)} disabled={mealIndex === totalMeals - 1} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${mealIndex === totalMeals - 1 ? 'text-white/10 cursor-not-allowed' : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'}`}><ChevronDown size={18} /></button>
+            </div>
+            <h3 className="text-xl font-bold text-emerald-400">{meal.name}</h3>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => onEdit(meal)} className="p-2.5 text-white/30 hover:text-white hover:bg-white/10 rounded-xl"><Edit3 size={18} /></button>
+            <button onClick={() => onDelete(meal.id)} className="p-2.5 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl"><Trash2 size={18} /></button>
+          </div>
+        </div>
+        {meal.description && <p className="text-sm text-white/60 mt-3 leading-relaxed">{meal.description}</p>}
+      </div>
+    </div>
+  );
+});
+
+// ✅ ExerciseCard - 외부로 이동 + React.memo
+const ExerciseCard = React.memo(({ ex, onEdit, onDelete, onUpdateMemo, isInLibrary }) => {
+  const [localMemo, setLocalMemo] = useState(ex.memo || '');
+  const [isPlaying, setIsPlaying] = useState(false);
+  
+  useEffect(() => { setLocalMemo(ex.memo || ''); }, [ex.memo]);
+  
+  const handleMemoSave = useCallback(() => { onUpdateMemo(ex.id, localMemo); }, [ex.id, localMemo, onUpdateMemo]);
+  
+  const thumbnail = useMemo(() => getYouTubeThumbnail(ex.video), [ex.video]);
+  const embedUrl = useMemo(() => getYouTubeEmbedUrl(ex.video), [ex.video]);
+  
+  return (
+    <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
+      {ex.video && thumbnail && (
+        <div className="relative bg-black/60">
+          {isPlaying ? (
+            <div className="relative pt-[56.25%]">
+              <iframe src={embedUrl} className="absolute inset-0 w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+              <button onClick={() => setIsPlaying(false)} className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10 border border-white/20"><Pause size={20} className="text-white" /></button>
+            </div>
+          ) : (
+            <div className="aspect-video cursor-pointer group" onClick={() => setIsPlaying(true)}>
+              <img src={thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" loading="lazy" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center">
+                <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-xl border border-white/20 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all"><Play size={36} className="text-white ml-1" fill="white" /></div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div className="p-6">
+        <div className="flex justify-between items-start mb-5">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-xl font-bold text-white">{ex.name}</h3>
+              {isInLibrary && <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1"><BookOpen size={10} />라이브러리</span>}
+            </div>
+            {ex.category && <span className={`text-xs px-3 py-1.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'} border ${categoryColors[ex.category]?.border || 'border-white/10'}`}>{ex.category}</span>}
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => onEdit(ex)} className="p-2.5 text-white/40 hover:text-white hover:bg-white/10 rounded-xl"><Edit3 size={18} /></button>
+            <button onClick={() => onDelete(ex.id)} className="p-2.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 rounded-xl"><Trash2 size={18} /></button>
+          </div>
+        </div>
+        <div className="bg-black/30 rounded-2xl p-4 mb-5 border border-white/[0.05]">
+          {ex.sets.map((set, idx) => (
+            <div key={idx} className="flex items-center text-sm py-3 border-b border-white/[0.05] last:border-0">
+              <span className="text-white/40 w-16 font-medium">세트 {idx + 1}</span>
+              <span className="text-amber-400 font-bold flex-1 text-lg">{set.weight}<span className="text-amber-400/60 text-sm ml-0.5">kg</span></span>
+              <span className="text-white/80">{set.reps}개 × {set.sets}세트</span>
+            </div>
+          ))}
+        </div>
+        {ex.description && <p className="text-sm text-white/50 leading-relaxed mb-5 bg-black/20 rounded-xl p-4 border border-white/[0.05]">{ex.description}</p>}
+        <div className="border-t border-white/[0.08] pt-5">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">메모</span>
+            {localMemo !== (ex.memo || '') && <button onClick={handleMemoSave} className="text-xs px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg font-medium">저장</button>}
+          </div>
+          <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} placeholder="이 운동에 대한 메모..." rows={2} className="w-full bg-black/20 border border-white/[0.05] rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none resize-none" />
+        </div>
+      </div>
+    </div>
+  );
+});
+
+// ═══════════════════════════════════════════
+// ✅ 메인 컴포넌트
+// ═══════════════════════════════════════════
 
 export default function PTManagementApp() {
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -242,20 +399,16 @@ export default function PTManagementApp() {
   const [dietData, setDietData] = useState({});
   const [exerciseForm, setExerciseForm] = useState({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
   const [dietForm, setDietForm] = useState({ name: '', description: '', photo: null, localPreview: null });
-  
-  // 식단 편집 관련 상태
   const [showEditMealModal, setShowEditMealModal] = useState(false);
   const [editingMeal, setEditingMeal] = useState(null);
   const [editingMealDate, setEditingMealDate] = useState('');
   const [showMealDatePicker, setShowMealDatePicker] = useState(false);
-
-  // 묶음 가져오기 관련 상태
   const [showBundleImportModal, setShowBundleImportModal] = useState(false);
   const [bundleCalendarDate, setBundleCalendarDate] = useState(new Date());
-  const [bundleSelectedDate, setBundleSelectedDate] = useState(null); // 선택한 날짜 key
-  const [bundleSelectedExercises, setBundleSelectedExercises] = useState([]); // 체크된 운동들
+  const [bundleSelectedDate, setBundleSelectedDate] = useState(null);
+  const [bundleSelectedExercises, setBundleSelectedExercises] = useState([]);
 
-  // ✅ 날짜 포맷 - 로컬 시간 사용 (UTC가 아닌 한국 시간 기준)
+  // ✅ 날짜 포맷
   const formatDate = useCallback((date) => {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -265,7 +418,10 @@ export default function PTManagementApp() {
   
   const dateKey = useMemo(() => formatDate(currentDate), [currentDate, formatDate]);
 
-  const uploadImageToStorage = async (file) => {
+  // ✅ 오늘 날짜 키 (한번만 계산)
+  const todayKey = useMemo(() => formatDate(new Date()), [formatDate]);
+
+  const uploadImageToStorage = useCallback(async (file) => {
     if (!userId) return { success: false, error: '로그인이 필요합니다' };
     if (!file) return { success: false, error: '파일이 없습니다' };
     setUploadingPhoto(true);
@@ -282,9 +438,9 @@ export default function PTManagementApp() {
       setUploadingPhoto(false);
       return { success: false, error: '업로드에 실패했습니다' };
     }
-  };
+  }, [userId]);
 
-  const createLocalPreview = async (file) => {
+  const createLocalPreview = useCallback(async (file) => {
     try {
       const correctedFile = await fixImageOrientation(file);
       return new Promise((resolve) => {
@@ -301,21 +457,22 @@ export default function PTManagementApp() {
         reader.readAsDataURL(file);
       });
     }
-  };
+  }, []);
+
+  // ═══════════════════════════════════════════
+  // ✅ 핵심 최적화: 초기 데이터 로딩 - 필수 데이터 먼저, 나머지 지연 로드
+  // ═══════════════════════════════════════════
 
   const loadFromSupabase = useCallback(async (uid) => {
     if (!uid) return;
     setIsLoading(true);
     try {
-      const [workoutsRes, dietsRes, libraryRes, memosRes, suppsRes, suppDataRes, waterRes] = await Promise.all([
+      // ✅ Phase 1: 화면에 바로 필요한 핵심 데이터만 먼저 로드
+      const [workoutsRes, dietsRes] = await Promise.all([
         supabase.from('workouts').select('*').eq('user_id', uid),
         supabase.from('diets').select('*').eq('user_id', uid),
-        supabase.from('exercise_library').select('*').eq('user_id', uid),
-        supabase.from('memos').select('*').eq('user_id', uid),
-        supabase.from('supplements').select('*').eq('user_id', uid),
-        supabase.from('supplement_logs').select('*').eq('user_id', uid),
-        supabase.from('water_logs').select('*').eq('user_id', uid)
       ]);
+      
       if (workoutsRes.data) {
         const obj = {};
         workoutsRes.data.forEach(w => { obj[w.date] = { category: w.category, isPT: w.is_pt, exercises: w.exercises || [] }; });
@@ -323,11 +480,22 @@ export default function PTManagementApp() {
       }
       if (dietsRes.data) {
         const obj = {};
-        dietsRes.data.forEach(d => { 
-          obj[d.date] = { meals: Array.isArray(d.meals) ? d.meals : [] }; 
-        });
+        dietsRes.data.forEach(d => { obj[d.date] = { meals: Array.isArray(d.meals) ? d.meals : [] }; });
         setDietData(obj);
       }
+      
+      // ✅ Phase 1 완료 → 로딩 해제 → 화면 즉시 렌더링
+      setIsLoading(false);
+      
+      // ✅ Phase 2: 나머지 데이터 백그라운드 로드 (화면 표시 후)
+      const [libraryRes, memosRes, suppsRes, suppDataRes, waterRes] = await Promise.all([
+        supabase.from('exercise_library').select('*').eq('user_id', uid),
+        supabase.from('memos').select('*').eq('user_id', uid),
+        supabase.from('supplements').select('*').eq('user_id', uid),
+        supabase.from('supplement_logs').select('*').eq('user_id', uid),
+        supabase.from('water_logs').select('*').eq('user_id', uid)
+      ]);
+
       if (libraryRes.data && libraryRes.data.length > 0) {
         setExerciseLibrary(libraryRes.data.map(ex => ({ id: ex.library_id || ex.id, name: ex.name, category: ex.category, sets: ex.sets || [], description: ex.description, video: ex.video || '', memo: ex.memo || '' })));
       }
@@ -347,8 +515,10 @@ export default function PTManagementApp() {
         waterRes.data.forEach(w => { obj[w.date] = w.amount || 0; });
         setWaterIntake(obj);
       }
-    } catch (error) { console.error('불러오기 실패:', error); }
-    setIsLoading(false);
+    } catch (error) { 
+      console.error('불러오기 실패:', error); 
+      setIsLoading(false);
+    }
   }, []);
 
   const saveWorkoutToSupabase = useCallback(async (date, data) => {
@@ -364,12 +534,7 @@ export default function PTManagementApp() {
     if (!userId) return;
     setIsSyncing(true);
     try {
-      const mealsToSave = Array.isArray(data.meals) ? data.meals : [];
-      await supabase.from('diets').upsert({ 
-        user_id: userId, 
-        date, 
-        meals: mealsToSave 
-      }, { onConflict: 'user_id,date' });
+      await supabase.from('diets').upsert({ user_id: userId, date, meals: Array.isArray(data.meals) ? data.meals : [] }, { onConflict: 'user_id,date' });
     } catch (error) { console.error('식단 저장 실패:', error); }
     setIsSyncing(false);
   }, [userId]);
@@ -417,7 +582,7 @@ export default function PTManagementApp() {
     try { await supabase.from('water_logs').upsert({ user_id: userId, date, amount }, { onConflict: 'user_id,date' }); } catch (error) { console.error('물 기록 저장 실패:', error); }
   }, [userId]);
 
-  const handleLogin = async () => {
+  const handleLogin = useCallback(async () => {
     if (!loginInput.trim()) return;
     const uid = loginInput.trim().toLowerCase();
     setUserId(uid);
@@ -425,9 +590,9 @@ export default function PTManagementApp() {
     setShowLoginModal(false);
     setLoginInput('');
     await loadFromSupabase(uid);
-  };
+  }, [loginInput, loadFromSupabase]);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     setUserId(null);
     localStorage.removeItem('pt-user-id');
     setWorkoutData({});
@@ -438,28 +603,26 @@ export default function PTManagementApp() {
     setSupplementData({});
     setWaterIntake({});
     setShowLoginModal(true);
-  };
+  }, []);
 
   useEffect(() => {
     if (userId) { loadFromSupabase(userId); }
     else { setIsLoading(false); setShowLoginModal(true); }
   }, [userId, loadFromSupabase]);
 
-  const formatDisplayDate = (date) => {
+  const formatDisplayDate = useCallback((date) => {
     const days = ['일', '월', '화', '수', '목', '금', '토'];
     return `${date.getMonth() + 1}월 ${date.getDate()}일 (${days[date.getDay()]})`;
-  };
+  }, []);
 
-  const changeDate = (days) => { const d = new Date(currentDate); d.setDate(d.getDate() + days); setCurrentDate(d); };
-  const changeWeek = (weeks) => { const d = new Date(currentDate); d.setDate(d.getDate() + (weeks * 7)); setCurrentDate(d); };
-  const changeMonth = (months) => { const d = new Date(currentDate); d.setMonth(d.getMonth() + months); setCurrentDate(d); };
+  const changeDate = useCallback((days) => { setCurrentDate(prev => { const d = new Date(prev); d.setDate(d.getDate() + days); return d; }); }, []);
+  const changeWeek = useCallback((weeks) => { setCurrentDate(prev => { const d = new Date(prev); d.setDate(d.getDate() + (weeks * 7)); return d; }); }, []);
+  const changeMonth = useCallback((months) => { setCurrentDate(prev => { const d = new Date(prev); d.setMonth(d.getMonth() + months); return d; }); }, []);
 
-  // ✅ 주간 날짜: 일요일 시작
   const getWeekDates = useCallback(() => {
     const dates = [];
     const start = new Date(currentDate);
-    const day = start.getDay(); // 0=일요일
-    start.setDate(start.getDate() - day); // 일요일로 이동
+    start.setDate(start.getDate() - start.getDay());
     for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(d.getDate() + i); dates.push(d); }
     return dates;
   }, [currentDate]);
@@ -473,27 +636,51 @@ export default function PTManagementApp() {
     return dates;
   }, [currentDate]);
 
-  const todayWorkout = workoutData[dateKey] || { category: '', exercises: [], isPT: false };
+  // ✅ 메모이즈된 오늘 데이터
+  const todayWorkout = useMemo(() => workoutData[dateKey] || { category: '', exercises: [], isPT: false }, [workoutData, dateKey]);
   const todayDiet = useMemo(() => dietData[dateKey] || { meals: [] }, [dietData, dateKey]);
-  const todayMemo = memoData[dateKey] || '';
-  const todaySupplements = supplementData[dateKey] || [];
-  const todayWater = waterIntake[dateKey] || 0;
+  const todayMemo = useMemo(() => memoData[dateKey] || '', [memoData, dateKey]);
+  const todaySupplements = useMemo(() => supplementData[dateKey] || [], [supplementData, dateKey]);
+  const todayWater = useMemo(() => waterIntake[dateKey] || 0, [waterIntake, dateKey]);
 
-  const handleRotatePhoto = async (direction) => {
+  // ✅ 라이브러리 ID Set (빠른 조회용)
+  const libraryIdSet = useMemo(() => {
+    const set = new Set();
+    exerciseLibrary.forEach(ex => { set.add(ex.id); set.add(ex.name); });
+    return set;
+  }, [exerciseLibrary]);
+
+  const isExerciseInLibrary = useCallback((ex) => {
+    return libraryIdSet.has(ex.name) || libraryIdSet.has(ex.libraryId);
+  }, [libraryIdSet]);
+
+  // ✅ 운동 메모 업데이트 - useCallback으로 안정화
+  const updateExerciseMemo = useCallback(async (exId, memo) => {
+    const newData = { ...workoutData[dateKey], exercises: workoutData[dateKey].exercises.map(ex => ex.id === exId ? { ...ex, memo } : ex) };
+    setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
+    await saveWorkoutToSupabase(dateKey, newData);
+  }, [workoutData, dateKey, saveWorkoutToSupabase]);
+
+  // ✅ 식단 사진 회전 콜백 (MealCard용)
+  const handleMealPhotoRotate = useCallback(async (mealId, rotatedDataUrl) => {
+    const currentMeals = Array.isArray(dietData[dateKey]?.meals) ? dietData[dateKey].meals : [];
+    const newData = { meals: currentMeals.map(m => m.id === mealId ? { ...m, photo: rotatedDataUrl } : m) };
+    setDietData(prev => ({ ...prev, [dateKey]: newData }));
+    saveDietToSupabase(dateKey, newData);
+  }, [dietData, dateKey, saveDietToSupabase]);
+
+  const handleRotatePhoto = useCallback(async (direction) => {
     const currentImage = dietForm.photo || dietForm.localPreview;
     if (!currentImage) return;
     const rotationDegrees = direction === 'left' ? -90 : 90;
     try {
       const rotatedDataUrl = await rotateImageFromUrl(currentImage, rotationDegrees);
-      if (dietForm.photo) {
-        setDietForm(prev => ({ ...prev, photo: rotatedDataUrl, localPreview: null }));
-      } else {
-        setDietForm(prev => ({ ...prev, localPreview: rotatedDataUrl }));
-      }
+      if (dietForm.photo) setDietForm(prev => ({ ...prev, photo: rotatedDataUrl, localPreview: null }));
+      else setDietForm(prev => ({ ...prev, localPreview: rotatedDataUrl }));
     } catch (error) { console.error('회전 실패:', error); }
-  };
+  }, [dietForm.photo, dietForm.localPreview]);
 
-  const handlePhotoUpload = async (e) => {
+  const handlePhotoUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!userId) { setUploadError('로그인이 필요합니다'); return; }
@@ -503,15 +690,12 @@ export default function PTManagementApp() {
     const localPreview = await createLocalPreview(file);
     if (localPreview) setDietForm(prev => ({ ...prev, localPreview }));
     const result = await uploadImageToStorage(file);
-    if (result.success) {
-      setDietForm(prev => ({ ...prev, photo: result.url, localPreview: null }));
-    } else {
-      setUploadError(result.error);
-    }
+    if (result.success) setDietForm(prev => ({ ...prev, photo: result.url, localPreview: null }));
+    else setUploadError(result.error);
     e.target.value = '';
-  };
+  }, [userId, createLocalPreview, uploadImageToStorage]);
 
-  const handleGallerySelect = async (e) => {
+  const handleGallerySelect = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!userId) { setUploadError('로그인이 필요합니다'); return; }
@@ -521,15 +705,12 @@ export default function PTManagementApp() {
     const localPreview = await createLocalPreview(file);
     if (localPreview) setDietForm(prev => ({ ...prev, localPreview }));
     const result = await uploadImageToStorage(file);
-    if (result.success) {
-      setDietForm(prev => ({ ...prev, photo: result.url, localPreview: null }));
-    } else {
-      setUploadError(result.error);
-    }
+    if (result.success) setDietForm(prev => ({ ...prev, photo: result.url, localPreview: null }));
+    else setUploadError(result.error);
     e.target.value = '';
-  };
+  }, [userId, createLocalPreview, uploadImageToStorage]);
 
-  const handleAddMeal = async () => {
+  const handleAddMeal = useCallback(async () => {
     if (dietForm.localPreview && !dietForm.photo) {
       const confirmAdd = window.confirm('사진이 서버에 업로드되지 않았습니다. 사진 없이 저장하시겠습니까?');
       if (!confirmAdd) return;
@@ -542,29 +723,26 @@ export default function PTManagementApp() {
     setDietForm({ name: '', description: '', photo: null, localPreview: null });
     setUploadError(null);
     setShowAddModal(false);
-  };
+  }, [dietForm, dietData, dateKey, saveDietToSupabase]);
 
-  const handleDeleteMeal = async (id) => {
+  const handleDeleteMeal = useCallback(async (id) => {
     if (!window.confirm('이 식단을 삭제하시겠습니까?')) return;
     const currentMeals = Array.isArray(dietData[dateKey]?.meals) ? dietData[dateKey].meals : [];
     const newData = { meals: currentMeals.filter(m => m.id !== id) };
     setDietData(prev => ({ ...prev, [dateKey]: newData }));
     await saveDietToSupabase(dateKey, newData);
-  };
+  }, [dietData, dateKey, saveDietToSupabase]);
 
-  // ✅ 식단 편집 - dateKey를 올바르게 설정
-  const handleEditMeal = (meal) => {
+  const handleEditMeal = useCallback((meal) => {
     setEditingMeal({ ...meal });
-    setEditingMealDate(dateKey); // 현재 보고있는 날짜 사용
+    setEditingMealDate(dateKey);
     setShowEditMealModal(true);
-  };
+  }, [dateKey]);
 
-  const handleSaveMeal = async () => {
+  const handleSaveMeal = useCallback(async () => {
     if (!editingMeal) return;
-    
     const originalDate = dateKey;
     const newDate = editingMealDate;
-    
     if (originalDate === newDate) {
       const currentMeals = Array.isArray(dietData[originalDate]?.meals) ? dietData[originalDate].meals : [];
       const newData = { meals: currentMeals.map(m => m.id === editingMeal.id ? editingMeal : m) };
@@ -573,67 +751,51 @@ export default function PTManagementApp() {
     } else {
       const originalMeals = Array.isArray(dietData[originalDate]?.meals) ? dietData[originalDate].meals : [];
       const updatedOriginalData = { meals: originalMeals.filter(m => m.id !== editingMeal.id) };
-      
       const targetMeals = Array.isArray(dietData[newDate]?.meals) ? dietData[newDate].meals : [];
       const updatedTargetData = { meals: [...targetMeals, editingMeal] };
-      
-      setDietData(prev => ({ 
-        ...prev, 
-        [originalDate]: updatedOriginalData,
-        [newDate]: updatedTargetData
-      }));
-      
+      setDietData(prev => ({ ...prev, [originalDate]: updatedOriginalData, [newDate]: updatedTargetData }));
       await saveDietToSupabase(originalDate, updatedOriginalData);
       await saveDietToSupabase(newDate, updatedTargetData);
     }
-    
     setShowEditMealModal(false);
     setEditingMeal(null);
     setEditingMealDate('');
-  };
+  }, [editingMeal, editingMealDate, dateKey, dietData, saveDietToSupabase]);
 
-  const handleEditMealRotatePhoto = async (direction) => {
+  const handleEditMealRotatePhoto = useCallback(async (direction) => {
     if (!editingMeal?.photo) return;
     const rotationDegrees = direction === 'left' ? -90 : 90;
     try {
       const rotatedDataUrl = await rotateImageFromUrl(editingMeal.photo, rotationDegrees);
       setEditingMeal(prev => ({ ...prev, photo: rotatedDataUrl }));
     } catch (error) { console.error('회전 실패:', error); }
-  };
+  }, [editingMeal?.photo]);
 
-  const handleEditMealPhotoUpload = async (e) => {
+  const handleEditMealPhotoUpload = useCallback(async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadError(null);
     setUploadingPhoto(true);
     const result = await uploadImageToStorage(file);
-    if (result.success) {
-      setEditingMeal(prev => ({ ...prev, photo: result.url }));
-    } else {
-      setUploadError(result.error);
-    }
+    if (result.success) setEditingMeal(prev => ({ ...prev, photo: result.url }));
+    else setUploadError(result.error);
     setUploadingPhoto(false);
     e.target.value = '';
-  };
+  }, [uploadImageToStorage]);
 
-  // ✅ 식단 순서 이동 (위/아래 버튼)
-  const handleMoveMeal = async (mealId, direction) => {
+  const handleMoveMeal = useCallback(async (mealId, direction) => {
     const currentMeals = Array.isArray(dietData[dateKey]?.meals) ? [...dietData[dateKey].meals] : [];
     const idx = currentMeals.findIndex(m => m.id === mealId);
     if (idx === -1) return;
-    
     const newIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (newIdx < 0 || newIdx >= currentMeals.length) return;
-    
-    // 부드러운 스왑
     const temp = currentMeals[idx];
     currentMeals[idx] = currentMeals[newIdx];
     currentMeals[newIdx] = temp;
-    
     const newData = { meals: currentMeals };
     setDietData(prev => ({ ...prev, [dateKey]: newData }));
     await saveDietToSupabase(dateKey, newData);
-  };
+  }, [dietData, dateKey, saveDietToSupabase]);
 
   const filteredLibrary = useMemo(() => exerciseLibrary.filter(ex => {
     const matchSearch = ex.name.toLowerCase().includes(librarySearchTerm.toLowerCase());
@@ -641,63 +803,40 @@ export default function PTManagementApp() {
     return matchSearch && matchCat;
   }), [exerciseLibrary, librarySearchTerm, selectedCategory]);
 
-  // ✅ 묶음 가져오기 - 선택한 날짜의 운동을 오늘로 가져오기
-  const handleBundleImport = async () => {
+  const handleBundleImport = useCallback(async () => {
     if (!bundleSelectedDate || bundleSelectedExercises.length === 0) return;
-    
     const sourceData = workoutData[bundleSelectedDate];
     if (!sourceData?.exercises) return;
-    
-    // 선택된 운동만 필터링
     const exercisesToImport = sourceData.exercises
       .filter(ex => bundleSelectedExercises.includes(ex.id))
       .map((ex, idx) => {
-        // 라이브러리에 있으면 라이브러리 최신 데이터 사용
         const libEx = ex.libraryId ? exerciseLibrary.find(l => l.id === ex.libraryId) : null;
         const baseEx = libEx || ex;
-        return {
-          ...baseEx,
-          id: Date.now() + idx,
-          libraryId: ex.libraryId || libEx?.id || null,
-          sets: JSON.parse(JSON.stringify(baseEx.sets)),
-          memo: '' // 메모는 초기화
-        };
+        return { ...baseEx, id: Date.now() + idx, libraryId: ex.libraryId || libEx?.id || null, sets: JSON.parse(JSON.stringify(baseEx.sets)), memo: '' };
       });
-    
     const existingData = workoutData[dateKey] || { category: '', isPT: false, exercises: [] };
-    const newData = {
-      category: existingData.category || sourceData.category || '',
-      isPT: existingData.isPT || false,
-      exercises: [...(existingData.exercises || []), ...exercisesToImport]
-    };
-    
+    const newData = { category: existingData.category || sourceData.category || '', isPT: existingData.isPT || false, exercises: [...(existingData.exercises || []), ...exercisesToImport] };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
-    
     setShowBundleImportModal(false);
     setBundleSelectedDate(null);
     setBundleSelectedExercises([]);
-  };
+  }, [bundleSelectedDate, bundleSelectedExercises, workoutData, exerciseLibrary, dateKey, saveWorkoutToSupabase]);
 
-  // 묶음 가져오기에서 날짜 선택 시 해당 날짜 운동 리스트 보기
-  const handleBundleDateSelect = (date) => {
+  const handleBundleDateSelect = useCallback((date) => {
     const key = formatDate(date);
     const data = workoutData[key];
     if (data?.exercises?.length > 0) {
       setBundleSelectedDate(key);
-      // 기본적으로 모든 운동 선택
       setBundleSelectedExercises(data.exercises.map(ex => ex.id));
     }
-  };
+  }, [formatDate, workoutData]);
 
-  // 묶음 가져오기에서 개별 운동 선택/해제
-  const toggleBundleExercise = (exId) => {
-    setBundleSelectedExercises(prev => 
-      prev.includes(exId) ? prev.filter(id => id !== exId) : [...prev, exId]
-    );
-  };
+  const toggleBundleExercise = useCallback((exId) => {
+    setBundleSelectedExercises(prev => prev.includes(exId) ? prev.filter(id => id !== exId) : [...prev, exId]);
+  }, []);
 
-  const handleImportFromLibrary = () => {
+  const handleImportFromLibrary = useCallback(() => {
     const toAdd = selectedExercises.map((id, idx) => {
       const ex = exerciseLibrary.find(e => e.id === id);
       return { ...ex, id: Date.now() + idx, libraryId: ex.id, sets: JSON.parse(JSON.stringify(ex.sets)) };
@@ -708,9 +847,9 @@ export default function PTManagementApp() {
     saveWorkoutToSupabase(dateKey, newData);
     setSelectedExercises([]);
     setShowLibraryModal(false);
-  };
+  }, [selectedExercises, exerciseLibrary, todayWorkout.category, workoutData, dateKey, saveWorkoutToSupabase]);
 
-  const handleAddExercise = async () => {
+  const handleAddExercise = useCallback(async () => {
     const libraryId = exerciseLibrary.find(e => e.name === exerciseForm.name)?.id || null;
     const newEx = { id: Date.now(), name: exerciseForm.name, category: exerciseForm.category || todayWorkout.category || '미지정', sets: exerciseForm.sets, description: exerciseForm.description, video: exerciseForm.video, memo: exerciseForm.memo, libraryId };
     if (exerciseForm.saveToLibrary && !exerciseLibrary.find(e => e.name === exerciseForm.name)) {
@@ -725,25 +864,23 @@ export default function PTManagementApp() {
     await saveWorkoutToSupabase(dateKey, newData);
     setExerciseForm({ name: '', category: '', video: '', sets: [{ weight: '', reps: '', sets: 1 }], description: '', saveToLibrary: true, isPT: false, memo: '' });
     setShowAddModal(false);
-  };
+  }, [exerciseForm, exerciseLibrary, todayWorkout.category, workoutData, dateKey, userId, saveWorkoutToSupabase, saveLibraryToSupabase]);
 
-  const handleDeleteExercise = async (id) => {
+  const handleDeleteExercise = useCallback(async (id) => {
     const newData = { ...workoutData[dateKey], exercises: workoutData[dateKey].exercises.filter(e => e.id !== id) };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
-  };
+  }, [workoutData, dateKey, saveWorkoutToSupabase]);
 
-  const handleEditExercise = (ex) => { setEditingExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowEditModal(true); };
+  const handleEditExercise = useCallback((ex) => { setEditingExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowEditModal(true); }, []);
 
-  const handleSaveExercise = async (syncToLibrary = false) => {
+  const handleSaveExercise = useCallback(async (syncToLibrary = false) => {
     const newData = { ...workoutData[dateKey], exercises: workoutData[dateKey].exercises.map(ex => ex.id === editingExercise.id ? editingExercise : ex) };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
     if (syncToLibrary && editingExercise.libraryId) {
       const newLib = exerciseLibrary.map(ex => {
-        if (ex.id === editingExercise.libraryId) {
-          return { ...ex, name: editingExercise.name, category: editingExercise.category, sets: JSON.parse(JSON.stringify(editingExercise.sets)), description: editingExercise.description, video: editingExercise.video || '', memo: editingExercise.memo || '' };
-        }
+        if (ex.id === editingExercise.libraryId) return { ...ex, name: editingExercise.name, category: editingExercise.category, sets: JSON.parse(JSON.stringify(editingExercise.sets)), description: editingExercise.description, video: editingExercise.video || '', memo: editingExercise.memo || '' };
         return ex;
       });
       setExerciseLibrary(newLib);
@@ -751,9 +888,9 @@ export default function PTManagementApp() {
     }
     setShowEditModal(false);
     setEditingExercise(null);
-  };
+  }, [workoutData, dateKey, editingExercise, exerciseLibrary, userId, saveWorkoutToSupabase, saveLibraryToSupabase]);
 
-  const handleSaveToLibrary = async () => {
+  const handleSaveToLibrary = useCallback(async () => {
     if (!editingExercise) return;
     const existingIndex = exerciseLibrary.findIndex(e => e.name === editingExercise.name);
     if (existingIndex !== -1) {
@@ -768,16 +905,14 @@ export default function PTManagementApp() {
       await saveLibraryToSupabase(userId, newLib);
       alert('라이브러리에 저장되었습니다!');
     }
-  };
+  }, [editingExercise, exerciseLibrary, userId, saveLibraryToSupabase]);
 
-  const handleConfirmOverwrite = async () => {
+  const handleConfirmOverwrite = useCallback(async () => {
     if (!pendingLibrarySave) return;
     const existingLibEx = exerciseLibrary.find(ex => ex.name === pendingLibrarySave.name);
     const libraryId = existingLibEx?.id;
     const newLib = exerciseLibrary.map(ex => {
-      if (ex.name === pendingLibrarySave.name) {
-        return { ...ex, category: pendingLibrarySave.category, sets: JSON.parse(JSON.stringify(pendingLibrarySave.sets)), description: pendingLibrarySave.description, video: pendingLibrarySave.video || '', memo: pendingLibrarySave.memo || '' };
-      }
+      if (ex.name === pendingLibrarySave.name) return { ...ex, category: pendingLibrarySave.category, sets: JSON.parse(JSON.stringify(pendingLibrarySave.sets)), description: pendingLibrarySave.description, video: pendingLibrarySave.video || '', memo: pendingLibrarySave.memo || '' };
       return ex;
     });
     setExerciseLibrary(newLib);
@@ -786,76 +921,70 @@ export default function PTManagementApp() {
     setShowOverwriteConfirm(false);
     setPendingLibrarySave(null);
     alert('라이브러리가 업데이트되었습니다!');
-  };
+  }, [pendingLibrarySave, exerciseLibrary, userId, editingExercise, saveLibraryToSupabase]);
 
-  const handleEditLibraryExercise = (ex) => { setEditingLibraryExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowLibraryEditModal(true); };
+  const handleEditLibraryExercise = useCallback((ex) => { setEditingLibraryExercise({ ...ex, sets: JSON.parse(JSON.stringify(ex.sets)) }); setShowLibraryEditModal(true); }, []);
 
-  const handleSaveLibraryExercise = async () => {
+  const handleSaveLibraryExercise = useCallback(async () => {
     const newLib = exerciseLibrary.map(ex => ex.id === editingLibraryExercise.id ? editingLibraryExercise : ex);
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
     setShowLibraryEditModal(false);
     setEditingLibraryExercise(null);
-  };
+  }, [exerciseLibrary, editingLibraryExercise, userId, saveLibraryToSupabase]);
 
-  const handleAddNewLibraryExercise = async () => {
+  const handleAddNewLibraryExercise = useCallback(async () => {
     const newEx = { ...newLibraryExercise, id: `lib-${Date.now()}` };
     const newLib = [...exerciseLibrary, newEx];
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
     setNewLibraryExercise({ name: '', category: '등', sets: [{ weight: '', reps: '', sets: 1 }], description: '', video: '' });
     setShowAddLibraryModal(false);
-  };
+  }, [newLibraryExercise, exerciseLibrary, userId, saveLibraryToSupabase]);
 
-  const handleDeleteFromLibrary = async (id) => {
+  const handleDeleteFromLibrary = useCallback(async (id) => {
     if (!window.confirm('라이브러리에서 삭제하시겠습니까?')) return;
     const newLib = exerciseLibrary.filter(ex => ex.id !== id);
     setExerciseLibrary(newLib);
     await saveLibraryToSupabase(userId, newLib);
-  };
+  }, [exerciseLibrary, userId, saveLibraryToSupabase]);
 
-  const handleAddSupplement = async () => {
+  const handleAddSupplement = useCallback(async () => {
     const newSupp = { id: `supp-${Date.now()}`, ...newSupplement };
     const newSupps = [...supplements, newSupp];
     setSupplements(newSupps);
     await saveSupplementsToSupabase(newSupps);
     setNewSupplement({ name: '', dosage: '' });
     setShowAddSupplementModal(false);
-  };
+  }, [newSupplement, supplements, saveSupplementsToSupabase]);
 
-  const handleEditSupplement = (supp) => { setEditingSupplement({ ...supp }); setShowEditSupplementModal(true); };
+  const handleEditSupplement = useCallback((supp) => { setEditingSupplement({ ...supp }); setShowEditSupplementModal(true); }, []);
 
-  const handleSaveSupplement = async () => {
+  const handleSaveSupplement = useCallback(async () => {
     const newSupps = supplements.map(s => s.id === editingSupplement.id ? editingSupplement : s);
     setSupplements(newSupps);
     await saveSupplementsToSupabase(newSupps);
     setShowEditSupplementModal(false);
     setEditingSupplement(null);
-  };
+  }, [supplements, editingSupplement, saveSupplementsToSupabase]);
 
-  const handleDeleteSupplement = async (id) => {
+  const handleDeleteSupplement = useCallback(async (id) => {
     const newSupps = supplements.filter(s => s.id !== id);
     setSupplements(newSupps);
     await saveSupplementsToSupabase(newSupps);
-  };
+  }, [supplements, saveSupplementsToSupabase]);
 
-  const toggleSupplementTaken = async (suppId) => {
+  const toggleSupplementTaken = useCallback(async (suppId) => {
     const taken = todaySupplements.includes(suppId) ? todaySupplements.filter(id => id !== suppId) : [...todaySupplements, suppId];
     setSupplementData(prev => ({ ...prev, [dateKey]: taken }));
     await saveSupplementLogToSupabase(dateKey, taken);
-  };
+  }, [todaySupplements, dateKey, saveSupplementLogToSupabase]);
 
-  const updateWaterIntake = async (amount) => {
+  const updateWaterIntake = useCallback(async (amount) => {
     const newAmount = Math.max(0, todayWater + amount);
     setWaterIntake(prev => ({ ...prev, [dateKey]: newAmount }));
     await saveWaterLogToSupabase(dateKey, newAmount);
-  };
-
-  const updateExerciseMemo = async (exId, memo) => {
-    const newData = { ...workoutData[dateKey], exercises: workoutData[dateKey].exercises.map(ex => ex.id === exId ? { ...ex, memo } : ex) };
-    setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
-    await saveWorkoutToSupabase(dateKey, newData);
-  };
+  }, [todayWater, dateKey, saveWaterLogToSupabase]);
 
   const updateEditingSet = useCallback((idx, field, val) => { setEditingExercise(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
   const addEditingSetRow = useCallback(() => { setEditingExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
@@ -869,23 +998,23 @@ export default function PTManagementApp() {
   const addNewLibrarySetRow = useCallback(() => { setNewLibraryExercise(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
   const removeNewLibrarySetRow = useCallback((idx) => { setNewLibraryExercise(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
-  const togglePT = async () => {
+  const togglePT = useCallback(async () => {
     const newData = { ...workoutData[dateKey], category: workoutData[dateKey]?.category || '', exercises: workoutData[dateKey]?.exercises || [], isPT: !workoutData[dateKey]?.isPT };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
-  };
+  }, [workoutData, dateKey, saveWorkoutToSupabase]);
 
   const addSetRow = useCallback(() => { setExerciseForm(prev => ({ ...prev, sets: [...prev.sets, { weight: '', reps: '', sets: 1 }] })); }, []);
   const updateSetRow = useCallback((idx, field, val) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.map((s, i) => i === idx ? { ...s, [field]: val } : s) })); }, []);
   const removeSetRow = useCallback((idx) => { setExerciseForm(prev => ({ ...prev, sets: prev.sets.filter((_, i) => i !== idx) })); }, []);
 
-  const updateCategory = async (cat) => {
+  const updateCategory = useCallback(async (cat) => {
     const newData = { ...workoutData[dateKey], category: cat, isPT: workoutData[dateKey]?.isPT || false, exercises: workoutData[dateKey]?.exercises || [] };
     setWorkoutData(prev => ({ ...prev, [dateKey]: newData }));
     await saveWorkoutToSupabase(dateKey, newData);
-  };
+  }, [workoutData, dateKey, saveWorkoutToSupabase]);
 
-  const toggleExerciseSelection = (id) => { setSelectedExercises(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); };
+  const toggleExerciseSelection = useCallback((id) => { setSelectedExercises(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]); }, []);
 
   const getAllMemos = useCallback(() => Object.entries(memoData).filter(([_, content]) => content?.trim()).sort((a, b) => b[0].localeCompare(a[0])), [memoData]);
 
@@ -908,6 +1037,10 @@ export default function PTManagementApp() {
     return stats;
   }, [getWeekDates, formatDate, workoutData]);
 
+  // ═══════════════════════════════════════════
+  // ✅ 로딩 화면
+  // ═══════════════════════════════════════════
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
@@ -919,176 +1052,9 @@ export default function PTManagementApp() {
     );
   }
 
-  // ✅ MealCard - 드래그 대신 위/아래 이동 버튼 사용
-  const MealCard = ({ meal, mealIndex, totalMeals, onEdit, onDelete, onMoveUp, onMoveDown, dateKey: cardDateKey, dietData: cardDietData, setDietData: cardSetDietData, saveDietToSupabase: cardSaveDiet }) => {
-    const [currentPhoto, setCurrentPhoto] = useState(meal.photo);
-    const [isRotating, setIsRotating] = useState(false);
-
-    const handleRotate = async (direction) => {
-      if (isRotating || !currentPhoto) return;
-      setIsRotating(true);
-      const rotationDegrees = direction === 'left' ? -90 : 90;
-      try {
-        const rotatedDataUrl = await rotateImageFromUrl(currentPhoto, rotationDegrees);
-        setCurrentPhoto(rotatedDataUrl);
-        
-        const currentMeals = Array.isArray(cardDietData[cardDateKey]?.meals) ? cardDietData[cardDateKey].meals : [];
-        const newData = { meals: currentMeals.map(m => m.id === meal.id ? { ...m, photo: rotatedDataUrl } : m) };
-        cardSetDietData(prev => ({ ...prev, [cardDateKey]: newData }));
-        cardSaveDiet(cardDateKey, newData);
-      } catch (error) { console.error('회전 실패:', error); }
-      setIsRotating(false);
-    };
-
-    return (
-      <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20 transition-all">
-        {currentPhoto && (
-          <div className="relative bg-black/40">
-            <img src={currentPhoto} alt="meal" className="w-full max-h-80 object-contain" />
-            <div className="absolute bottom-3 right-3 flex gap-2">
-              <button onClick={() => handleRotate('left')} disabled={isRotating} className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center border border-white/20 disabled:opacity-50">
-                <RotateCcw size={18} className="text-white" />
-              </button>
-              <button onClick={() => handleRotate('right')} disabled={isRotating} className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center border border-white/20 disabled:opacity-50">
-                <RotateCw size={18} className="text-white" />
-              </button>
-            </div>
-            {isRotating && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="p-6">
-          <div className="flex justify-between items-start">
-            <div className="flex items-center gap-3">
-              {/* ✅ 위/아래 이동 버튼 */}
-              <div className="flex flex-col gap-1">
-                <button 
-                  onClick={() => onMoveUp(meal.id)} 
-                  disabled={mealIndex === 0}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                    mealIndex === 0 
-                      ? 'text-white/10 cursor-not-allowed' 
-                      : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'
-                  }`}
-                >
-                  <ChevronUp size={18} />
-                </button>
-                <button 
-                  onClick={() => onMoveDown(meal.id)} 
-                  disabled={mealIndex === totalMeals - 1}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                    mealIndex === totalMeals - 1 
-                      ? 'text-white/10 cursor-not-allowed' 
-                      : 'text-white/40 hover:text-emerald-400 hover:bg-emerald-500/20 active:scale-90'
-                  }`}
-                >
-                  <ChevronDown size={18} />
-                </button>
-              </div>
-              <h3 className="text-xl font-bold text-emerald-400">{meal.name}</h3>
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => onEdit(meal)} className="p-2.5 text-white/30 hover:text-white hover:bg-white/10 rounded-xl">
-                <Edit3 size={18} />
-              </button>
-              <button onClick={() => onDelete(meal.id)} className="p-2.5 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl">
-                <Trash2 size={18} />
-              </button>
-            </div>
-          </div>
-          {meal.description && <p className="text-sm text-white/60 mt-3 leading-relaxed">{meal.description}</p>}
-        </div>
-      </div>
-    );
-  };
-
-  const ExerciseCard = ({ ex, onEdit, onDelete }) => {
-    const [localMemo, setLocalMemo] = useState(ex.memo || '');
-    const [isPlaying, setIsPlaying] = useState(false);
-    const handleMemoSave = () => { updateExerciseMemo(ex.id, localMemo); };
-    const thumbnail = getYouTubeThumbnail(ex.video);
-    const embedUrl = getYouTubeEmbedUrl(ex.video);
-    const inLibrary = exerciseLibrary.some(libEx => libEx.name === ex.name || libEx.id === ex.libraryId);
-    return (
-      <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl border border-white/[0.08] overflow-hidden shadow-xl shadow-black/20">
-        {ex.video && thumbnail && (
-          <div className="relative bg-black/60">
-            {isPlaying ? (
-              <div className="relative pt-[56.25%]">
-                <iframe src={embedUrl} className="absolute inset-0 w-full h-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
-                <button onClick={() => setIsPlaying(false)} className="absolute top-3 right-3 w-10 h-10 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center z-10 border border-white/20"><Pause size={20} className="text-white" /></button>
-              </div>
-            ) : (
-              <div className="aspect-video cursor-pointer group" onClick={() => setIsPlaying(true)}>
-                <img src={thumbnail} alt="Video thumbnail" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-center justify-center">
-                  <div className="w-20 h-20 rounded-full bg-red-600/90 backdrop-blur-xl border border-white/20 flex items-center justify-center opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all"><Play size={36} className="text-white ml-1" fill="white" /></div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="p-6">
-          <div className="flex justify-between items-start mb-5">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <h3 className="text-xl font-bold text-white">{ex.name}</h3>
-                {inLibrary && <span className="text-[10px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1"><BookOpen size={10} />라이브러리</span>}
-              </div>
-              {ex.category && <span className={`text-xs px-3 py-1.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'} border ${categoryColors[ex.category]?.border || 'border-white/10'}`}>{ex.category}</span>}
-            </div>
-            <div className="flex items-center gap-1">
-              <button onClick={() => onEdit(ex)} className="p-2.5 text-white/40 hover:text-white hover:bg-white/10 rounded-xl"><Edit3 size={18} /></button>
-              <button onClick={() => onDelete(ex.id)} className="p-2.5 text-white/40 hover:text-red-400 hover:bg-red-500/10 rounded-xl"><Trash2 size={18} /></button>
-            </div>
-          </div>
-          <div className="bg-black/30 rounded-2xl p-4 mb-5 border border-white/[0.05]">
-            {ex.sets.map((set, idx) => (
-              <div key={idx} className="flex items-center text-sm py-3 border-b border-white/[0.05] last:border-0">
-                <span className="text-white/40 w-16 font-medium">세트 {idx + 1}</span>
-                <span className="text-amber-400 font-bold flex-1 text-lg">{set.weight}<span className="text-amber-400/60 text-sm ml-0.5">kg</span></span>
-                <span className="text-white/80">{set.reps}개 × {set.sets}세트</span>
-              </div>
-            ))}
-          </div>
-          {ex.description && <p className="text-sm text-white/50 leading-relaxed mb-5 bg-black/20 rounded-xl p-4 border border-white/[0.05]">{ex.description}</p>}
-          <div className="border-t border-white/[0.08] pt-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">메모</span>
-              {localMemo !== (ex.memo || '') && <button onClick={handleMemoSave} className="text-xs px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg font-medium">저장</button>}
-            </div>
-            <textarea value={localMemo} onChange={(e) => setLocalMemo(e.target.value)} placeholder="이 운동에 대한 메모..." rows={2} className="w-full bg-black/20 border border-white/[0.05] rounded-xl px-4 py-3 text-sm text-white placeholder-white/20 focus:outline-none resize-none" />
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const CalendarCell = ({ date, data, isToday, onClick, size = 'normal' }) => {
-    const hasWorkout = data?.exercises?.length > 0;
-    const isPT = data?.isPT;
-    const category = data?.category;
-    const categoryColor = categoryColors[category];
-    if (size === 'small') {
-      return (
-        <button onClick={onClick} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm relative ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}>
-          {isPT && <Star size={8} className="absolute top-1 right-1 text-amber-400" fill="currentColor" />}
-          <span className={`font-semibold ${hasWorkout ? 'text-white' : 'text-white/50'}`}>{date.getDate()}</span>
-          {hasWorkout && category && <span className={`text-[8px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}
-        </button>
-      );
-    }
-    return (
-      <button onClick={onClick} className={`aspect-square rounded-2xl flex flex-col items-center justify-center relative ${isToday ? 'ring-2 ring-blue-500' : ''} ${hasWorkout ? 'bg-gradient-to-br from-blue-500/30 to-cyan-500/20 border border-blue-500/30' : 'bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.06]'}`}>
-        {isPT && <Star size={12} className="absolute top-1.5 right-1.5 text-amber-400" fill="currentColor" />}
-        <span className={`text-lg font-bold ${hasWorkout ? 'text-white' : 'text-white/60'}`}>{date.getDate()}</span>
-        {hasWorkout && category && <span className={`text-[10px] mt-0.5 ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}
-      </button>
-    );
-  };
+  // ═══════════════════════════════════════════
+  // ✅ 뷰 렌더러들
+  // ═══════════════════════════════════════════
 
   const renderDailyView = () => (
     <div className="max-w-lg mx-auto px-5 py-6">
@@ -1107,7 +1073,16 @@ export default function PTManagementApp() {
             </div>
           </div>
           <div className="space-y-4">
-            {todayWorkout.exercises.map((ex) => (<ExerciseCard key={ex.id} ex={ex} onEdit={handleEditExercise} onDelete={handleDeleteExercise} />))}
+            {todayWorkout.exercises.map((ex) => (
+              <ExerciseCard 
+                key={ex.id} 
+                ex={ex} 
+                onEdit={handleEditExercise} 
+                onDelete={handleDeleteExercise} 
+                onUpdateMemo={updateExerciseMemo}
+                isInLibrary={isExerciseInLibrary(ex)}
+              />
+            ))}
           </div>
           <div className="flex gap-2 mt-6">
             <button onClick={() => { setShowLibraryModal(true); setSelectedExercises([]); }} className="flex-1 py-4 bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 rounded-2xl flex items-center justify-center gap-2 font-semibold text-sm"><Download size={16} /><span>가져오기</span></button>
@@ -1133,10 +1108,7 @@ export default function PTManagementApp() {
                 onDelete={handleDeleteMeal}
                 onMoveUp={(id) => handleMoveMeal(id, 'up')}
                 onMoveDown={(id) => handleMoveMeal(id, 'down')}
-                dateKey={dateKey}
-                dietData={dietData}
-                setDietData={setDietData}
-                saveDietToSupabase={saveDietToSupabase}
+                onRotatePhoto={handleMealPhotoRotate}
               />
             ))}
           </div>
@@ -1196,16 +1168,14 @@ export default function PTManagementApp() {
     </div>
   );
 
-  // ✅ 주간 뷰 - 운동 상세 기록 포함
   const renderWeeklyView = () => {
     const weekDates = getWeekDates();
     const stats = getWeeklyStats();
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
-        {/* ✅ 일~토 순서 */}
         <div className="grid grid-cols-7 gap-2 mb-6">
           {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50">{day}</div>)}
-          {weekDates.map((date, idx) => { const key = formatDate(date); const data = workoutData[key]; const isToday = formatDate(new Date()) === key; return <CalendarCell key={idx} date={date} data={data} isToday={isToday} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="normal" />; })}
+          {weekDates.map((date, idx) => { const key = formatDate(date); return <CalendarCell key={idx} date={date} data={workoutData[key]} isToday={todayKey === key} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="normal" />; })}
         </div>
         <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl p-6 border border-white/[0.08] shadow-xl shadow-black/20 mb-5">
           <h3 className="font-bold text-white text-lg mb-4">이번 주 통계</h3>
@@ -1215,7 +1185,6 @@ export default function PTManagementApp() {
             <div className="bg-black/30 rounded-2xl p-4 text-center border border-white/[0.05]"><p className="text-3xl font-black text-emerald-400">{stats.totalSets}</p><p className="text-sm text-white/50 mt-1">총 세트</p></div>
           </div>
         </div>
-        {/* ✅ 주간 운동 상세 기록 */}
         <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] backdrop-blur-xl rounded-3xl p-6 border border-white/[0.08] shadow-xl shadow-black/20">
           <h3 className="font-bold text-white text-lg mb-4">이번 주 운동 기록</h3>
           <div className="space-y-4">
@@ -1229,11 +1198,7 @@ export default function PTManagementApp() {
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">{date.getMonth() + 1}/{date.getDate()} ({days[date.getDay()]})</span>
-                      {data.category && (
-                        <span className={`text-xs px-2 py-1 rounded-full ${categoryColors[data.category]?.light || 'bg-white/10'} ${categoryColors[data.category]?.text || 'text-white/60'} border ${categoryColors[data.category]?.border || 'border-white/10'}`}>
-                          {data.category}
-                        </span>
-                      )}
+                      {data.category && <span className={`text-xs px-2 py-1 rounded-full ${categoryColors[data.category]?.light || 'bg-white/10'} ${categoryColors[data.category]?.text || 'text-white/60'} border ${categoryColors[data.category]?.border || 'border-white/10'}`}>{data.category}</span>}
                       {data.isPT && <Star size={14} className="text-amber-400" fill="currentColor" />}
                     </div>
                     <span className="text-xs text-white/40">{data.exercises.length}종목</span>
@@ -1243,11 +1208,7 @@ export default function PTManagementApp() {
                       <div key={exIdx} className="flex items-center gap-2 text-sm">
                         <span className="text-white/60 font-medium">{ex.name}</span>
                         <span className="text-white/20">·</span>
-                        <span className="text-amber-400/80 text-xs">
-                          {ex.sets.map((s, si) => (
-                            <span key={si}>{si > 0 && ', '}{s.weight}kg×{s.reps}개×{s.sets}세트</span>
-                          ))}
-                        </span>
+                        <span className="text-amber-400/80 text-xs">{ex.sets.map((s, si) => (<span key={si}>{si > 0 && ', '}{s.weight}kg×{s.reps}개×{s.sets}세트</span>))}</span>
                       </div>
                     ))}
                   </div>
@@ -1255,10 +1216,7 @@ export default function PTManagementApp() {
               );
             })}
             {weekDates.every(d => !workoutData[formatDate(d)]?.exercises?.length) && (
-              <div className="text-center py-8">
-                <Dumbbell size={36} className="mx-auto text-white/15 mb-3" />
-                <p className="text-white/30">이번 주 운동 기록이 없습니다</p>
-              </div>
+              <div className="text-center py-8"><Dumbbell size={36} className="mx-auto text-white/15 mb-3" /><p className="text-white/30">이번 주 운동 기록이 없습니다</p></div>
             )}
           </div>
         </div>
@@ -1269,15 +1227,12 @@ export default function PTManagementApp() {
   const renderMonthlyView = () => {
     const monthDates = getMonthDates();
     const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    // ✅ 일요일 시작이므로 adjustedFirstDay = firstDay 그대로
-    const adjustedFirstDay = firstDay;
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
         <div className="grid grid-cols-7 gap-1.5 mb-4">
-          {/* ✅ 일~토 순서 */}
           {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
-          {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
-          {monthDates.map((date, idx) => { const key = formatDate(date); const data = workoutData[key]; const isToday = formatDate(new Date()) === key; return <CalendarCell key={idx} date={date} data={data} isToday={isToday} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="small" />; })}
+          {Array(firstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
+          {monthDates.map((date, idx) => { const key = formatDate(date); return <CalendarCell key={idx} date={date} data={workoutData[key]} isToday={todayKey === key} onClick={() => { setCurrentDate(date); setViewMode('daily'); }} size="small" />; })}
         </div>
       </div>
     );
@@ -1286,25 +1241,18 @@ export default function PTManagementApp() {
   const renderDietMonthlyView = () => {
     const monthDates = getMonthDates();
     const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
-    // ✅ 일요일 시작
-    const adjustedFirstDay = firstDay;
     return (
       <div className="max-w-2xl mx-auto px-5 py-6">
         <div className="grid grid-cols-7 gap-1.5 mb-4">
-          {/* ✅ 일~토 순서 */}
           {['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}
-          {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
+          {Array(firstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
           {monthDates.map((date, idx) => { 
             const key = formatDate(date); 
             const data = dietData[key]; 
-            const isToday = formatDate(new Date()) === key; 
+            const isToday = todayKey === key; 
             const hasMeals = Array.isArray(data?.meals) && data.meals.length > 0;
             return (
-              <button 
-                key={idx} 
-                onClick={() => { setCurrentDate(date); setViewMode('daily'); setActiveTab('diet'); }} 
-                className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm ${isToday ? 'ring-2 ring-emerald-500' : ''} ${hasMeals ? 'bg-gradient-to-br from-emerald-500/30 to-teal-500/20 border border-emerald-500/30' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}
-              >
+              <button key={idx} onClick={() => { setCurrentDate(date); setViewMode('daily'); setActiveTab('diet'); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm ${isToday ? 'ring-2 ring-emerald-500' : ''} ${hasMeals ? 'bg-gradient-to-br from-emerald-500/30 to-teal-500/20 border border-emerald-500/30' : 'bg-white/[0.02] hover:bg-white/[0.05]'}`}>
                 <span className={`font-semibold ${hasMeals ? 'text-white' : 'text-white/50'}`}>{date.getDate()}</span>
                 {hasMeals && <span className="text-[10px] text-emerald-400 mt-0.5">{data.meals.length}끼</span>}
               </button>
@@ -1363,8 +1311,6 @@ export default function PTManagementApp() {
     const month = currentDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
-    // ✅ 일요일 시작
-    const adjustedFirstDay = firstDay;
     const dates = [];
     for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
     return (
@@ -1375,29 +1321,24 @@ export default function PTManagementApp() {
             <h3 className="text-lg font-bold text-white">{year}년 {month + 1}월</h3>
             <button onClick={() => { const d = new Date(currentDate); d.setMonth(d.getMonth() + 1); setCurrentDate(d); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={20} /></button>
           </div>
-          {/* ✅ 일~토 순서 */}
           <div className="grid grid-cols-7 gap-1.5 mb-3">{['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
           <div className="grid grid-cols-7 gap-1.5">
-            {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
-            {dates.map((date, idx) => { const key = formatDate(date); const isToday = formatDate(new Date()) === key; const isSelected = formatDate(currentDate) === key; const data = workoutData[key]; const hasWorkout = data?.exercises?.length > 0; const isPT = data?.isPT; const category = data?.category; const categoryColor = categoryColors[category]; return (<button key={idx} onClick={() => { setCurrentDate(date); setShowCalendarPopup(false); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold relative ${isSelected ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : isToday ? 'ring-2 ring-blue-500 text-white' : hasWorkout ? 'bg-blue-500/20 text-blue-400' : 'text-white/60 hover:bg-white/[0.05]'}`}>{isPT && !isSelected && <Star size={8} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />}<span>{date.getDate()}</span>{hasWorkout && category && !isSelected && <span className={`text-[7px] ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}</button>); })}
+            {Array(firstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
+            {dates.map((date, idx) => { const key = formatDate(date); const isToday = todayKey === key; const isSelected = formatDate(currentDate) === key; const data = workoutData[key]; const hasWorkout = data?.exercises?.length > 0; const isPT = data?.isPT; const category = data?.category; const categoryColor = categoryColors[category]; return (<button key={idx} onClick={() => { setCurrentDate(date); setShowCalendarPopup(false); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold relative ${isSelected ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg' : isToday ? 'ring-2 ring-blue-500 text-white' : hasWorkout ? 'bg-blue-500/20 text-blue-400' : 'text-white/60 hover:bg-white/[0.05]'}`}>{isPT && !isSelected && <Star size={8} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />}<span>{date.getDate()}</span>{hasWorkout && category && !isSelected && <span className={`text-[7px] ${categoryColor?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}</button>); })}
           </div>
         </div>
       </div>
     );
   };
 
-  // 식단 날짜 선택 팝업
   const renderMealDatePicker = () => {
     const tempDate = new Date(editingMealDate + 'T00:00:00');
     const year = tempDate.getFullYear();
     const month = tempDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDay = new Date(year, month, 1).getDay();
-    // ✅ 일요일 시작
-    const adjustedFirstDay = firstDay;
     const dates = [];
     for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
-    
     return (
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[60] p-5" onClick={() => setShowMealDatePicker(false)}>
         <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-sm rounded-3xl p-6 border border-white/10 shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -1406,29 +1347,24 @@ export default function PTManagementApp() {
             <h3 className="text-lg font-bold text-white">{year}년 {month + 1}월</h3>
             <button onClick={() => { const d = new Date(editingMealDate + 'T00:00:00'); d.setMonth(d.getMonth() + 1); setEditingMealDate(formatDate(d)); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={20} /></button>
           </div>
-          {/* ✅ 일~토 순서 */}
           <div className="grid grid-cols-7 gap-1.5 mb-3">{['일', '월', '화', '수', '목', '금', '토'].map(day => <div key={day} className="text-center text-sm font-semibold text-white/50 py-2">{day}</div>)}</div>
           <div className="grid grid-cols-7 gap-1.5">
-            {Array(adjustedFirstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
+            {Array(firstDay).fill(null).map((_, idx) => <div key={`empty-${idx}`} />)}
             {dates.map((date, idx) => { 
               const key = formatDate(date); 
-              const isToday = formatDate(new Date()) === key; 
+              const isToday = todayKey === key; 
               const isSelected = editingMealDate === key;
-              return (
-                <button 
-                  key={idx} 
-                  onClick={() => { setEditingMealDate(key); setShowMealDatePicker(false); }} 
-                  className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold ${isSelected ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg' : isToday ? 'ring-2 ring-emerald-500 text-white' : 'text-white/60 hover:bg-white/[0.05]'}`}
-                >
-                  <span>{date.getDate()}</span>
-                </button>
-              ); 
+              return (<button key={idx} onClick={() => { setEditingMealDate(key); setShowMealDatePicker(false); }} className={`aspect-square rounded-xl flex flex-col items-center justify-center text-sm font-semibold ${isSelected ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg' : isToday ? 'ring-2 ring-emerald-500 text-white' : 'text-white/60 hover:bg-white/[0.05]'}`}><span>{date.getDate()}</span></button>); 
             })}
           </div>
         </div>
       </div>
     );
   };
+
+  // ═══════════════════════════════════════════
+  // ✅ 메인 렌더
+  // ═══════════════════════════════════════════
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-white pb-20">
@@ -1467,6 +1403,7 @@ export default function PTManagementApp() {
         {viewMode === 'memos' && renderMemoListView()}
       </div>
 
+      {/* ✅ 모달들은 조건부 렌더링 → 열릴 때만 마운트 */}
       {showCalendarPopup && renderCalendarPopup()}
       {showMealDatePicker && renderMealDatePicker()}
 
@@ -1509,54 +1446,25 @@ export default function PTManagementApp() {
                   <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">사진</label>
                   {(dietForm.photo || dietForm.localPreview) && (
                     <div className="relative rounded-2xl overflow-hidden mb-3">
-                      <img src={dietForm.photo || dietForm.localPreview} alt="Preview" className="w-full max-h-60 object-contain bg-black/40" />
+                      <img src={dietForm.photo || dietForm.localPreview} alt="Preview" className="w-full max-h-60 object-contain bg-black/40" loading="lazy" />
                       <div className="absolute bottom-2 right-2">
-                        {dietForm.photo ? (
-                          <span className="px-2 py-1 bg-emerald-500/80 rounded-lg text-xs text-white flex items-center gap-1"><Check size={12} /> 업로드 완료</span>
-                        ) : (
-                          <span className="px-2 py-1 bg-amber-500/80 rounded-lg text-xs text-white flex items-center gap-1"><AlertCircle size={12} /> 로컬 미리보기</span>
-                        )}
+                        {dietForm.photo ? (<span className="px-2 py-1 bg-emerald-500/80 rounded-lg text-xs text-white flex items-center gap-1"><Check size={12} /> 업로드 완료</span>) : (<span className="px-2 py-1 bg-amber-500/80 rounded-lg text-xs text-white flex items-center gap-1"><AlertCircle size={12} /> 로컬 미리보기</span>)}
                       </div>
                       <button onClick={() => setDietForm(prev => ({ ...prev, photo: null, localPreview: null }))} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center"><X size={16} className="text-white" /></button>
                     </div>
                   )}
                   <div className="flex gap-3">
-                    <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                      <Camera size={24} className="text-white/40" />
-                      <span className="text-sm text-white/40">카메라</span>
-                      <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={uploadingPhoto} />
-                    </label>
-                    <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                      <ImageIcon size={24} className="text-white/40" />
-                      <span className="text-sm text-white/40">앨범</span>
-                      <input type="file" accept="image/*" onChange={handleGallerySelect} className="hidden" disabled={uploadingPhoto} />
-                    </label>
+                    <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]"><Camera size={24} className="text-white/40" /><span className="text-sm text-white/40">카메라</span><input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" disabled={uploadingPhoto} /></label>
+                    <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]"><ImageIcon size={24} className="text-white/40" /><span className="text-sm text-white/40">앨범</span><input type="file" accept="image/*" onChange={handleGallerySelect} className="hidden" disabled={uploadingPhoto} /></label>
                   </div>
-                  {uploadingPhoto && (
-                    <div className="mt-3 text-center">
-                      <div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                      <span className="text-sm text-white/50">업로드 중...</span>
-                    </div>
-                  )}
+                  {uploadingPhoto && (<div className="mt-3 text-center"><div className="w-8 h-8 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div><span className="text-sm text-white/50">업로드 중...</span></div>)}
                   {(dietForm.photo || dietForm.localPreview) && (
                     <div className="flex gap-2 mt-3 justify-center">
-                      <button onClick={() => handleRotatePhoto('left')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10">
-                        <RotateCcw size={18} className="text-white/60" />
-                        <span className="text-sm text-white/60">왼쪽 회전</span>
-                      </button>
-                      <button onClick={() => handleRotatePhoto('right')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10">
-                        <RotateCw size={18} className="text-white/60" />
-                        <span className="text-sm text-white/60">오른쪽 회전</span>
-                      </button>
+                      <button onClick={() => handleRotatePhoto('left')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10"><RotateCcw size={18} className="text-white/60" /><span className="text-sm text-white/60">왼쪽 회전</span></button>
+                      <button onClick={() => handleRotatePhoto('right')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10"><RotateCw size={18} className="text-white/60" /><span className="text-sm text-white/60">오른쪽 회전</span></button>
                     </div>
                   )}
-                  {uploadError && (
-                    <div className="mt-2 p-3 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2">
-                      <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
-                      <span className="text-sm text-red-400">{uploadError}</span>
-                      <button onClick={() => setUploadError(null)} className="ml-auto text-red-400 hover:text-red-300"><X size={16} /></button>
-                    </div>
-                  )}
+                  {uploadError && (<div className="mt-2 p-3 bg-red-500/20 border border-red-500/30 rounded-xl flex items-center gap-2"><AlertCircle size={16} className="text-red-400 flex-shrink-0" /><span className="text-sm text-red-400">{uploadError}</span><button onClick={() => setUploadError(null)} className="ml-auto text-red-400 hover:text-red-300"><X size={16} /></button></div>)}
                 </div>
                 <div><label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">설명</label><textarea value={dietForm.description} onChange={(e) => setDietForm(p => ({ ...p, description: e.target.value }))} placeholder="먹은 음식..." rows={3} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 resize-none focus:outline-none focus:border-emerald-500/50" /></div>
                 <button onClick={handleAddMeal} disabled={!dietForm.name} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 disabled:from-slate-600 disabled:to-slate-600 rounded-2xl font-bold shadow-xl shadow-emerald-500/30 disabled:shadow-none">추가하기</button>
@@ -1566,7 +1474,6 @@ export default function PTManagementApp() {
         </div>
       )}
 
-      {/* 식단 편집 모달 */}
       {showEditMealModal && editingMeal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-50">
           <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-lg rounded-t-3xl p-6 max-h-[85vh] overflow-y-auto border-t border-white/10 shadow-2xl">
@@ -1577,55 +1484,32 @@ export default function PTManagementApp() {
             <div className="space-y-5">
               <div>
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">날짜</label>
-                <button 
-                  onClick={() => setShowMealDatePicker(true)}
-                  className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between hover:bg-white/[0.06]"
-                >
+                <button onClick={() => setShowMealDatePicker(true)} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white text-left flex items-center justify-between hover:bg-white/[0.06]">
                   <span>{(() => { const d = new Date(editingMealDate + 'T00:00:00'); return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }); })()}</span>
                   <Calendar size={18} className="text-white/40" />
                 </button>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">식사 이름</label>
-                <input type="text" value={editingMeal.name} onChange={(e) => setEditingMeal(p => ({ ...p, name: e.target.value }))} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50" />
-              </div>
+              <div><label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">식사 이름</label><input type="text" value={editingMeal.name} onChange={(e) => setEditingMeal(p => ({ ...p, name: e.target.value }))} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50" /></div>
               <div>
                 <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">사진</label>
                 {editingMeal.photo && (
                   <div className="relative rounded-2xl overflow-hidden mb-3">
-                    <img src={editingMeal.photo} alt="Preview" className="w-full max-h-60 object-contain bg-black/40" />
+                    <img src={editingMeal.photo} alt="Preview" className="w-full max-h-60 object-contain bg-black/40" loading="lazy" />
                     <button onClick={() => setEditingMeal(prev => ({ ...prev, photo: null }))} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center"><X size={16} className="text-white" /></button>
                   </div>
                 )}
                 <div className="flex gap-3">
-                  <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                    <Camera size={24} className="text-white/40" />
-                    <span className="text-sm text-white/40">카메라</span>
-                    <input type="file" accept="image/*" capture="environment" onChange={handleEditMealPhotoUpload} className="hidden" disabled={uploadingPhoto} />
-                  </label>
-                  <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]">
-                    <ImageIcon size={24} className="text-white/40" />
-                    <span className="text-sm text-white/40">앨범</span>
-                    <input type="file" accept="image/*" onChange={handleEditMealPhotoUpload} className="hidden" disabled={uploadingPhoto} />
-                  </label>
+                  <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]"><Camera size={24} className="text-white/40" /><span className="text-sm text-white/40">카메라</span><input type="file" accept="image/*" capture="environment" onChange={handleEditMealPhotoUpload} className="hidden" disabled={uploadingPhoto} /></label>
+                  <label className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/[0.03] border border-dashed border-white/20 rounded-2xl cursor-pointer hover:bg-white/[0.05]"><ImageIcon size={24} className="text-white/40" /><span className="text-sm text-white/40">앨범</span><input type="file" accept="image/*" onChange={handleEditMealPhotoUpload} className="hidden" disabled={uploadingPhoto} /></label>
                 </div>
                 {editingMeal.photo && (
                   <div className="flex gap-2 mt-3 justify-center">
-                    <button onClick={() => handleEditMealRotatePhoto('left')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10">
-                      <RotateCcw size={18} className="text-white/60" />
-                      <span className="text-sm text-white/60">왼쪽 회전</span>
-                    </button>
-                    <button onClick={() => handleEditMealRotatePhoto('right')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10">
-                      <RotateCw size={18} className="text-white/60" />
-                      <span className="text-sm text-white/60">오른쪽 회전</span>
-                    </button>
+                    <button onClick={() => handleEditMealRotatePhoto('left')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10"><RotateCcw size={18} className="text-white/60" /><span className="text-sm text-white/60">왼쪽 회전</span></button>
+                    <button onClick={() => handleEditMealRotatePhoto('right')} className="flex items-center gap-2 px-4 py-2 bg-white/[0.05] hover:bg-white/10 rounded-xl border border-white/10"><RotateCw size={18} className="text-white/60" /><span className="text-sm text-white/60">오른쪽 회전</span></button>
                   </div>
                 )}
               </div>
-              <div>
-                <label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">설명</label>
-                <textarea value={editingMeal.description || ''} onChange={(e) => setEditingMeal(p => ({ ...p, description: e.target.value }))} placeholder="먹은 음식..." rows={3} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 resize-none focus:outline-none focus:border-emerald-500/50" />
-              </div>
+              <div><label className="text-xs font-semibold text-white/50 mb-2 block uppercase tracking-wider">설명</label><textarea value={editingMeal.description || ''} onChange={(e) => setEditingMeal(p => ({ ...p, description: e.target.value }))} placeholder="먹은 음식..." rows={3} className="w-full bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-white/30 resize-none focus:outline-none focus:border-emerald-500/50" /></div>
               <button onClick={handleSaveMeal} className="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl font-bold shadow-xl shadow-emerald-500/30">저장하기</button>
             </div>
           </div>
@@ -1736,7 +1620,6 @@ export default function PTManagementApp() {
         </div>
       )}
 
-      {/* 묶음 가져오기 모달 */}
       {showBundleImportModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-end justify-center z-50">
           <div className="bg-gradient-to-br from-slate-900 to-slate-950 w-full max-w-lg rounded-t-3xl p-6 max-h-[90vh] overflow-y-auto border-t border-white/10 shadow-2xl">
@@ -1744,17 +1627,12 @@ export default function PTManagementApp() {
               <h2 className="text-xl font-black flex items-center gap-2"><Copy size={22} className="text-amber-400" />묶음 가져오기</h2>
               <button onClick={() => { setShowBundleImportModal(false); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><X size={20} /></button>
             </div>
-            
             <p className="text-sm text-white/50 mb-4">이전에 했던 운동을 묶음으로 가져옵니다. 날짜를 선택하세요.</p>
-
-            {/* 묶음 캘린더 네비게이션 */}
             <div className="flex items-center justify-between mb-4">
               <button onClick={() => { const d = new Date(bundleCalendarDate); d.setMonth(d.getMonth() - 1); setBundleCalendarDate(d); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronLeft size={18} /></button>
               <h3 className="text-base font-bold text-white">{bundleCalendarDate.getFullYear()}년 {bundleCalendarDate.getMonth() + 1}월</h3>
               <button onClick={() => { const d = new Date(bundleCalendarDate); d.setMonth(d.getMonth() + 1); setBundleCalendarDate(d); setBundleSelectedDate(null); setBundleSelectedExercises([]); }} className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/10 flex items-center justify-center"><ChevronRight size={18} /></button>
             </div>
-
-            {/* 묶음 캘린더 그리드 */}
             {(() => {
               const year = bundleCalendarDate.getFullYear();
               const month = bundleCalendarDate.getMonth();
@@ -1762,150 +1640,61 @@ export default function PTManagementApp() {
               const firstDay = new Date(year, month, 1).getDay();
               const dates = [];
               for (let i = 1; i <= daysInMonth; i++) dates.push(new Date(year, month, i));
-              
               return (
                 <div className="grid grid-cols-7 gap-1 mb-5">
-                  {['일','월','화','수','목','금','토'].map(day => (
-                    <div key={day} className="text-center text-xs font-semibold text-white/40 py-1.5">{day}</div>
-                  ))}
+                  {['일','월','화','수','목','금','토'].map(day => (<div key={day} className="text-center text-xs font-semibold text-white/40 py-1.5">{day}</div>))}
                   {Array(firstDay).fill(null).map((_, idx) => <div key={`e-${idx}`} />)}
                   {dates.map((date, idx) => {
                     const key = formatDate(date);
                     const data = workoutData[key];
                     const hasWorkout = data?.exercises?.length > 0;
                     const isSelected = bundleSelectedDate === key;
-                    const isToday = formatDate(new Date()) === key;
+                    const isToday = todayKey === key;
                     const isPT = data?.isPT;
                     const category = data?.category;
-                    
                     return (
-                      <button
-                        key={idx}
-                        onClick={() => hasWorkout && handleBundleDateSelect(date)}
-                        disabled={!hasWorkout}
-                        className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs relative transition-all ${
-                          isSelected 
-                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 scale-105' 
-                            : isToday 
-                              ? 'ring-1 ring-blue-500' 
-                              : ''
-                        } ${
-                          hasWorkout && !isSelected
-                            ? 'bg-blue-500/20 text-white hover:bg-blue-500/30 cursor-pointer border border-blue-500/20'
-                            : !hasWorkout 
-                              ? 'text-white/20 cursor-default'
-                              : ''
-                        }`}
-                      >
+                      <button key={idx} onClick={() => hasWorkout && handleBundleDateSelect(date)} disabled={!hasWorkout} className={`aspect-square rounded-lg flex flex-col items-center justify-center text-xs relative transition-all ${isSelected ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-amber-500/30 scale-105' : isToday ? 'ring-1 ring-blue-500' : ''} ${hasWorkout && !isSelected ? 'bg-blue-500/20 text-white hover:bg-blue-500/30 cursor-pointer border border-blue-500/20' : !hasWorkout ? 'text-white/20 cursor-default' : ''}`}>
                         {isPT && !isSelected && <Star size={6} className="absolute top-0.5 right-0.5 text-amber-400" fill="currentColor" />}
                         <span className="font-semibold">{date.getDate()}</span>
-                        {hasWorkout && category && !isSelected && (
-                          <span className={`text-[7px] mt-0.5 ${categoryColors[category]?.text || 'text-white/40'}`}>
-                            {categoryShort[category] || category}
-                          </span>
-                        )}
-                        {hasWorkout && isSelected && (
-                          <span className="text-[7px] mt-0.5 text-white/80">{data.exercises.length}종목</span>
-                        )}
+                        {hasWorkout && category && !isSelected && <span className={`text-[7px] mt-0.5 ${categoryColors[category]?.text || 'text-white/40'}`}>{categoryShort[category] || category}</span>}
+                        {hasWorkout && isSelected && <span className="text-[7px] mt-0.5 text-white/80">{data.exercises.length}종목</span>}
                       </button>
                     );
                   })}
                 </div>
               );
             })()}
-
-            {/* 선택한 날짜의 운동 리스트 */}
             {bundleSelectedDate && workoutData[bundleSelectedDate]?.exercises?.length > 0 && (
               <div className="border-t border-white/10 pt-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-bold text-white">
-                      {(() => {
-                        const d = new Date(bundleSelectedDate + 'T00:00:00');
-                        const days = ['일','월','화','수','목','금','토'];
-                        return `${d.getMonth()+1}/${d.getDate()} (${days[d.getDay()]})`;
-                      })()}
-                    </h3>
-                    {workoutData[bundleSelectedDate].category && (
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[workoutData[bundleSelectedDate].category]?.light || 'bg-white/10'} ${categoryColors[workoutData[bundleSelectedDate].category]?.text || 'text-white/60'} border ${categoryColors[workoutData[bundleSelectedDate].category]?.border || 'border-white/10'}`}>
-                        {workoutData[bundleSelectedDate].category}
-                      </span>
-                    )}
+                    <h3 className="font-bold text-white">{(() => { const d = new Date(bundleSelectedDate + 'T00:00:00'); const days = ['일','월','화','수','목','금','토']; return `${d.getMonth()+1}/${d.getDate()} (${days[d.getDay()]})`; })()}</h3>
+                    {workoutData[bundleSelectedDate].category && <span className={`text-xs px-2 py-0.5 rounded-full ${categoryColors[workoutData[bundleSelectedDate].category]?.light || 'bg-white/10'} ${categoryColors[workoutData[bundleSelectedDate].category]?.text || 'text-white/60'} border ${categoryColors[workoutData[bundleSelectedDate].category]?.border || 'border-white/10'}`}>{workoutData[bundleSelectedDate].category}</span>}
                     {workoutData[bundleSelectedDate].isPT && <Star size={14} className="text-amber-400" fill="currentColor" />}
                   </div>
-                  <button 
-                    onClick={() => {
-                      const allIds = workoutData[bundleSelectedDate].exercises.map(ex => ex.id);
-                      const allSelected = allIds.every(id => bundleSelectedExercises.includes(id));
-                      setBundleSelectedExercises(allSelected ? [] : allIds);
-                    }}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/10 text-white/60 font-medium"
-                  >
-                    {workoutData[bundleSelectedDate].exercises.every(ex => bundleSelectedExercises.includes(ex.id)) ? '전체 해제' : '전체 선택'}
-                  </button>
+                  <button onClick={() => { const allIds = workoutData[bundleSelectedDate].exercises.map(ex => ex.id); const allSelected = allIds.every(id => bundleSelectedExercises.includes(id)); setBundleSelectedExercises(allSelected ? [] : allIds); }} className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/10 text-white/60 font-medium">{workoutData[bundleSelectedDate].exercises.every(ex => bundleSelectedExercises.includes(ex.id)) ? '전체 해제' : '전체 선택'}</button>
                 </div>
-                
                 <div className="space-y-2 mb-5">
                   {workoutData[bundleSelectedDate].exercises.map(ex => {
                     const isChecked = bundleSelectedExercises.includes(ex.id);
                     return (
-                      <div 
-                        key={ex.id}
-                        onClick={() => toggleBundleExercise(ex.id)}
-                        className={`p-4 rounded-2xl cursor-pointer transition-all ${
-                          isChecked 
-                            ? 'bg-amber-500/15 border-2 border-amber-500/50' 
-                            : 'bg-white/[0.03] border border-white/10 hover:bg-white/[0.06]'
-                        }`}
-                      >
+                      <div key={ex.id} onClick={() => toggleBundleExercise(ex.id)} className={`p-4 rounded-2xl cursor-pointer transition-all ${isChecked ? 'bg-amber-500/15 border-2 border-amber-500/50' : 'bg-white/[0.03] border border-white/10 hover:bg-white/[0.06]'}`}>
                         <div className="flex items-center gap-3">
-                          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${
-                            isChecked ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-500' : 'border-white/30'
-                          }`}>
-                            {isChecked && <Check size={14} className="text-white" />}
-                          </div>
+                          <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 ${isChecked ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-amber-500' : 'border-white/30'}`}>{isChecked && <Check size={14} className="text-white" />}</div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-white text-sm">{ex.name}</span>
-                              {ex.category && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'}`}>
-                                  {ex.category}
-                                </span>
-                              )}
-                              {ex.video && <Video size={12} className="text-red-500" />}
-                            </div>
-                            <div className="text-xs text-white/40 truncate">
-                              {ex.sets.map((s, si) => (
-                                <span key={si}>{si > 0 && ' → '}<span className="text-amber-400/70">{s.weight}kg</span> {s.reps}개×{s.sets}세트</span>
-                              ))}
-                            </div>
+                            <div className="flex items-center gap-2 mb-1"><span className="font-bold text-white text-sm">{ex.name}</span>{ex.category && <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${categoryColors[ex.category]?.light || 'bg-white/10'} ${categoryColors[ex.category]?.text || 'text-white/60'}`}>{ex.category}</span>}{ex.video && <Video size={12} className="text-red-500" />}</div>
+                            <div className="text-xs text-white/40 truncate">{ex.sets.map((s, si) => (<span key={si}>{si > 0 && ' → '}<span className="text-amber-400/70">{s.weight}kg</span> {s.reps}개×{s.sets}세트</span>))}</div>
                           </div>
                         </div>
                       </div>
                     );
                   })}
                 </div>
-
-                <button 
-                  onClick={handleBundleImport} 
-                  disabled={bundleSelectedExercises.length === 0}
-                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 disabled:from-slate-600 disabled:to-slate-600 rounded-2xl font-bold shadow-xl shadow-amber-500/30 disabled:shadow-none flex items-center justify-center gap-2"
-                >
-                  <Copy size={18} />
-                  {bundleSelectedExercises.length > 0 
-                    ? `${bundleSelectedExercises.length}개 운동 가져오기` 
-                    : '운동을 선택하세요'}
-                </button>
+                <button onClick={handleBundleImport} disabled={bundleSelectedExercises.length === 0} className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 disabled:from-slate-600 disabled:to-slate-600 rounded-2xl font-bold shadow-xl shadow-amber-500/30 disabled:shadow-none flex items-center justify-center gap-2"><Copy size={18} />{bundleSelectedExercises.length > 0 ? `${bundleSelectedExercises.length}개 운동 가져오기` : '운동을 선택하세요'}</button>
               </div>
             )}
-
-            {/* 선택 전 안내 */}
             {!bundleSelectedDate && (
-              <div className="text-center py-8 border-t border-white/10">
-                <Calendar size={36} className="mx-auto text-white/15 mb-3" />
-                <p className="text-white/30 text-sm">운동한 날짜를 선택하면</p>
-                <p className="text-white/30 text-sm">해당 날짜의 운동을 묶음으로 가져올 수 있어요</p>
-              </div>
+              <div className="text-center py-8 border-t border-white/10"><Calendar size={36} className="mx-auto text-white/15 mb-3" /><p className="text-white/30 text-sm">운동한 날짜를 선택하면</p><p className="text-white/30 text-sm">해당 날짜의 운동을 묶음으로 가져올 수 있어요</p></div>
             )}
           </div>
         </div>
